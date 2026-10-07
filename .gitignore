@@ -1,0 +1,34 @@
+# Publish source and reviewed runtime assets only. Local evidence stays private.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/requirements.txt
+!/start.cmd
+!/*.py
+!/assets/
+!/docs/
+/assets/*
+!/assets/damage-digits.json
+!/assets/hud-digits.json
+!/assets/monster-catalog.json
+!/assets/exp-anchor.png
+!/assets/level-anchor.png
+!/assets/monster-level-prefix.png
+!/assets/levelup-d-dynamic/
+/assets/levelup-d-dynamic/*
+!/assets/levelup-d-dynamic/*.png
+# Tests that depend on private screenshots or locally acquired sprite packs.
+/test_exp_hardening.py
+/test_exp_spaces.py
+/test_combat.py
+/test_monsters.py
+/test_percent_ocr.py
+/test_level_ocr.py
+/test_percent_app.py
+/test_recognition.py
+__pycache__/
+*.py[cod]
+*.sqlite3*
+*.log
+.env*

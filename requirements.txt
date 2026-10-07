@@ -1,0 +1,6 @@
+rapidocr_onnxruntime==1.2.3
+mss==10.2.0
+dxcam==0.3.0
+numpy<3
+opencv-python<5
+Pillow>=10
