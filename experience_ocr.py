@@ -317,11 +317,36 @@ class ExperienceOCR:
             self.last_diagnostics.setdefault('fields',{})['percent']=dict(value=None,reason='insufficient_percent_votes')
         return value
 
+    def _absolute_variants(self,image):
+        """Give wide integer fields a quiet border before monochrome OCR.
+
+        The fixed HUD background can turn a leading 9 into 8. Keep the color
+        evidence and derive two bounded views from the complete foreground;
+        do not use a decoded value to decide which pixels or votes to retain.
+        Short fields keep their separately calibrated recognition path.
+        """
+        mask=cv2.inRange(cv2.cvtColor(image,cv2.COLOR_BGR2HSV),
+                         np.array([0,0,170]),np.array([179,110,255]))
+        points=cv2.findNonZero(mask)
+        if points is None:
+            return self.variants(image)
+        x,y,w,h=cv2.boundingRect(points)
+        if w < h*4:
+            return self.variants(image)
+        variants=[image]
+        for ratio,factor,invert in ((.4,3,True),(.25,4,False)):
+            pad=max(2,round(h*ratio))
+            glyphs=cv2.copyMakeBorder(mask[y:y+h,x:x+w],pad,pad,pad,pad,
+                                     cv2.BORDER_CONSTANT,value=0)
+            variants.append(cv2.resize(255-glyphs if invert else glyphs,None,
+                                       fx=factor,fy=factor,interpolation=cv2.INTER_NEAREST))
+        return variants
+
     def _absolute(self,image,details,allow_short=True):
         votes=[]
         original_tokens=[]
         normalized_tokens=[]
-        for index,variant in enumerate(self.variants(image)):
+        for index,variant in enumerate(self._absolute_variants(image)):
             raw,score=self.recognize_exp(variant)
             original_tokens.append(raw)
             details.append((raw,round(score,3)))

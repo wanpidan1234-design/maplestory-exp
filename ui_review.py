@@ -13,9 +13,10 @@ import queue
 import threading
 import time
 import tkinter as tk
+from tkinter import ttk
 import uuid
 
-from ui_theme import ACCENT, FONT, INK, LINE, MIDNIGHT, MUTED, PALE
+from ui_theme import ACCENT, FONT, INK, LINE, MIDNIGHT, MUTED, PALE, SURFACE, configure_history, configure_window
 
 
 ROOT = Path(__file__).absolute().parent
@@ -345,29 +346,31 @@ class ReviewStatusView:
         p = lambda value: round(value * scale)
         window = self.window = tk.Toplevel(self.orb.root)
         window.title('后台体验评审')
-        window.configure(bg='white')
+        configure_window(window)
+        configure_history(ttk.Style(window),scale)
         window.geometry(f'{p(520)}x{p(310)}')
         window.minsize(p(390), p(250))
-        self.details_heading = tk.Label(window, text='', bg='white', fg=INK,
+        self.details_heading = tk.Label(window, text='', bg=SURFACE, fg=INK,
                                         font=(FONT, -p(19)), anchor='w')
         self.details_heading.pack(fill='x', padx=p(22), pady=(p(20), p(10)))
-        body = tk.Frame(window, bg='white')
+        body = tk.Frame(window, bg=SURFACE)
         body.pack(fill='both', expand=True, padx=p(22))
-        self.details_text = tk.Text(body, wrap='word', bg='white', fg=INK,
-                                    relief='flat', borderwidth=0, height=7,
+        self.details_text = tk.Text(body, wrap='word', bg=SURFACE, fg=INK,
+                                    relief='flat', borderwidth=0, height=7,insertbackground=ACCENT,
+                                    selectbackground=MIDNIGHT['selection'],selectforeground=INK,
                                     font=(FONT, -p(12)), padx=0, pady=0)
-        scrollbar = tk.Scrollbar(body, orient='vertical', command=self.details_text.yview)
+        scrollbar = ttk.Scrollbar(body, orient='vertical', command=self.details_text.yview,style='History.Vertical.TScrollbar')
         scrollbar.pack(side='right', fill='y')
         self.details_text.configure(yscrollcommand=scrollbar.set)
         self.details_text.pack(side='left', fill='both', expand=True)
-        self.session_label = tk.Label(window, text='', anchor='w', bg='white', fg=MUTED,
+        self.session_label = tk.Label(window, text='', anchor='w', bg=SURFACE, fg=MUTED,
                                       font=(FONT, -p(10)))
         self.session_label.pack(fill='x', padx=p(22), pady=(p(8), p(10)))
-        actions = tk.Frame(window, bg='white')
+        actions = tk.Frame(window, bg=SURFACE)
         actions.pack(fill='x', padx=p(22), pady=(0, p(18)))
         def button(label, command):
             widget = tk.Button(actions, text=label, command=command, bg=PALE, fg=INK,
-                               activebackground='#dce8f8', relief='flat', borderwidth=0,
+                               activebackground=MIDNIGHT['hover'],activeforeground=INK,disabledforeground=MIDNIGHT['disabled'], relief='flat', borderwidth=0,
                                padx=p(12), pady=p(7), font=(FONT, -p(11)),
                                highlightthickness=1, highlightcolor=ACCENT,
                                highlightbackground=LINE, takefocus=True)

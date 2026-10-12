@@ -47,17 +47,17 @@ def game_geometry(include_monitor=True):
     physical_dpi()
     hwnd = USER.FindWindowW(None,'冒险岛怀旧服')
     if not hwnd:
-        raise RuntimeError('未找到冒险岛怀旧服窗口')
+        raise CaptureFailure('未找到冒险岛怀旧服窗口','window_not_found',dict(source='screen'))
     if USER.IsIconic(hwnd):
         raise CaptureFailure('游戏已最小化，请恢复窗口','minimized',dict(
             hwnd=hwnd,source='screen',observed_at=time.monotonic(),
             failure_kind='visibility_interrupted',visibility_reason='minimized'))
     rect,point = wt.RECT(),wt.POINT()
     if not USER.GetClientRect(hwnd,ctypes.byref(rect)) or not USER.ClientToScreen(hwnd,ctypes.byref(point)):
-        raise RuntimeError('无法读取游戏窗口位置')
+        raise CaptureFailure('无法读取游戏窗口位置','window_geometry',dict(source='screen'))
     client = dict(left=point.x,top=point.y,width=rect.right,height=rect.bottom)
     if client['width']<100 or client['height']<100:
-        raise RuntimeError('游戏窗口尺寸无效')
+        raise CaptureFailure('游戏窗口尺寸无效','window_size',dict(source='screen'))
     result=dict(hwnd=hwnd,client=client,dpi=USER.GetDpiForWindow(hwnd))
     if include_monitor:result['monitor']=choose_monitor(client,get_monitors())
     return result
@@ -66,7 +66,7 @@ class GameCapture:
     def __init__(self):
         self.anchor = cv2.imread(str(Path(__file__).parent/'assets'/'exp-anchor.png'),0)
         if self.anchor is None:
-            raise RuntimeError('缺少经验栏定位模板')
+            raise CaptureFailure('缺少经验栏定位模板','anchor_template_missing',dict(source='screen'))
         self.anchor = cv2.threshold(self.anchor,175,255,cv2.THRESH_BINARY)[1]
         self.cached = None
         self.cached_anchor = None

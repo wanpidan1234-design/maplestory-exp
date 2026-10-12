@@ -11,6 +11,7 @@ from pathlib import Path
 import tempfile
 import threading
 import time
+from collections import deque
 from collections.abc import Mapping
 
 import cv2
@@ -230,3 +231,198 @@ class RecognitionJournal:
                 except Exception:
                     self.last_error = type(error).__name__
                 return None
+
+
+def _detached_metadata(value):
+    """Bounded builtin-only snapshot; no JSON, pixels, or user object callbacks.
+
+    Limits are at least as strict as the disk journal. A shared character
+    budget also bounds escaped JSON produced later by its writer thread.
+    """
+    remaining, characters = 256, 8192
+
+    def string(item, limit=2048):
+        nonlocal characters
+        result = item[:min(limit, characters)]
+        characters -= len(result)
+        return result
+
+    def clean(item, depth=0):
+        nonlocal remaining
+        remaining -= 1
+        if remaining < 0 or depth > 6:
+            return '<limit>'
+        kind = type(item)
+        if item is None or kind is bool:
+            return item
+        if kind is int:
+            return item if item.bit_length() <= 256 else '<large-int>'
+        if kind is float:
+            return item if math.isfinite(item) else '<non-finite>'
+        if kind is str:
+            return string(item)
+        if kind is np.ndarray:
+            return dict(type='ndarray', shape=list(item.shape), omitted='array_values')
+        if kind in (np.bool_, np.int8, np.int16, np.int32, np.int64,
+                    np.uint8, np.uint16, np.uint32, np.uint64,
+                    np.float16, np.float32, np.float64):
+            return clean(item.item(), depth + 1)
+        if kind in (bytes, bytearray, memoryview):
+            return dict(type=kind.__name__, length=len(item), omitted='binary_values')
+        if kind is dict:
+            result = {}
+            for index, (key, child) in enumerate(item.items()):
+                if index >= 64 or remaining <= 0 or characters <= 0:
+                    result['_diagnostic_truncated'] = True
+                    break
+                name = key if type(key) is str else '<non-string-key>'
+                result[string(name, 128)] = clean(child, depth + 1)
+            return result
+        if kind in (list, tuple, set, frozenset):
+            result = []
+            for index, child in enumerate(item):
+                if index >= 64 or remaining <= 0 or characters <= 0:
+                    result.append('<truncated>')
+                    break
+                result.append(clean(child, depth + 1))
+            return result
+        return '<unsupported>'
+
+    return clean(value)
+
+
+class AsyncRecognitionJournal:
+    """Best-effort ROI writer with bounded pending work and detached callbacks.
+
+    record() never touches disk or encodes images/JSON. The callback runs on
+    the daemon writer and must itself be nonblocking; it receives only small
+    immutable scalar evidence, never an app object, metadata, or pixels.
+    """
+    def __init__(self, directory, *, on_result=None, max_pending=1,
+                 min_interval=5, journal=None, clock=time.monotonic):
+        if type(max_pending) is not int or not 1 <= max_pending <= 24:
+            raise ValueError('max_pending must be an integer between 1 and 24')
+        if type(min_interval) not in (int, float) or not math.isfinite(min_interval) or min_interval < 0:
+            raise ValueError('min_interval must be finite and non-negative')
+        self._journal = journal if journal is not None else RecognitionJournal(directory, min_interval=0)
+        self._callback = on_result
+        self._clock = clock
+        self._max_pending = max_pending
+        self._min_interval = min_interval
+        self._condition = threading.Condition(threading.Lock())
+        self._pending = deque()
+        self._closed = False
+        self._inflight = False
+        self._last_attempt = None
+        self._last_error = None
+        self._dropped = self._throttled = self._write_errors = self._callback_errors = 0
+        self._thread = threading.Thread(target=self._run, name='recognition-evidence', daemon=True)
+        self._thread.start()
+
+    @staticmethod
+    def _frame(frame):
+        if (type(frame) is not np.ndarray or frame.dtype != np.uint8
+                or frame.ndim not in (2, 3)
+                or (frame.ndim == 3 and frame.shape[2] not in (1, 3, 4))
+                or not frame.shape[0] or not frame.shape[1]
+                or frame.shape[0] > 256 or frame.shape[1] > 2048
+                or frame.nbytes > 1_500_000):
+            return None
+        return frame.copy()
+
+    @property
+    def last_error(self):
+        with self._condition:
+            return self._last_error
+
+    def status(self):
+        with self._condition:
+            return dict(queue=len(self._pending), inflight=self._inflight,
+                        dropped=self._dropped, throttled=self._throttled,
+                        write_errors=self._write_errors, callback_errors=self._callback_errors,
+                        closed=self._closed)
+
+    def record(self, stage, metadata, frame=None, level_frame=None):
+        # Contending producers must not wait even for another producer's copy.
+        if not self._condition.acquire(blocking=False):
+            self._dropped += 1
+            return None
+        try:
+            if self._closed or len(self._pending) >= self._max_pending:
+                self._dropped += 1
+                return None
+            now = float(self._clock())
+            if not math.isfinite(now):
+                raise ValueError('non-finite monotonic time')
+            if self._last_attempt is not None and now - self._last_attempt < self._min_interval:
+                self._throttled += 1
+                return None
+            self._last_attempt = now
+            detached = _detached_metadata(metadata)
+            sample_id = metadata.get('sample_id') if type(metadata) is dict else None
+            if type(sample_id) is str:
+                sample_id = sample_id[:128]
+            elif type(sample_id) is not int or sample_id.bit_length() > 256:
+                sample_id = None
+            stage = _text(stage[:128] if type(stage) is str else stage, 128)
+            self._pending.append((stage, detached, self._frame(frame),
+                                  self._frame(level_frame), sample_id))
+            self._condition.notify()
+        except Exception as error:
+            self._dropped += 1
+            self._last_error = type(error).__name__
+        finally:
+            self._condition.release()
+        return None
+
+    def _run(self):
+        while True:
+            with self._condition:
+                while not self._pending and not self._closed:
+                    self._condition.wait()
+                if not self._pending:
+                    return
+                stage, metadata, frame, level_frame, sample_id = self._pending.popleft()
+                self._inflight = True
+            path = None
+            error_type = None
+            try:
+                path = self._journal.record(stage, metadata, frame, level_frame)
+                error = self._journal.last_error
+                if error:
+                    error_type = str(error).split(':', 1)[0][:128]
+                slot_file = Path(path).name if path is not None else None
+            except Exception as error:
+                error_type = type(error).__name__
+                slot_file = None
+            with self._condition:
+                self._last_error = error_type
+                if error_type:
+                    self._write_errors += 1
+            if self._callback is not None:
+                try:
+                    self._callback(dict(sample_id=sample_id, stage=stage, slot_file=slot_file,
+                                        error_type=error_type,
+                                        result='written' if slot_file else ('error' if error_type else 'skipped')))
+                except Exception:
+                    with self._condition:
+                        self._callback_errors += 1
+            with self._condition:
+                self._inflight = False
+            del metadata, frame, level_frame
+
+    def close(self, timeout=.2):
+        """Stop accepting work; drain if possible, never wait beyond timeout."""
+        timeout = max(0., min(float(timeout), 60.))
+        deadline = time.monotonic() + timeout
+        self._closed = True
+        if not self._condition.acquire(timeout=timeout):
+            return False
+        try:
+            self._condition.notify_all()
+        finally:
+            self._condition.release()
+        if threading.current_thread() is self._thread:
+            return False
+        self._thread.join(max(0., deadline - time.monotonic()))
+        return not self._thread.is_alive()

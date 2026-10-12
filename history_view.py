@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import ttk,filedialog,messagebox
 from minute_chart import minute_buckets
 from history_reader import HistoryReader
-from ui_theme import configure_history, INK, MUTED, FONT
+from ui_theme import configure_history, configure_window, INK, MUTED, FONT, SURFACE, MIDNIGHT
 from ui_charts import DEFAULT_RATE_VIEW,RATE_VIEWS,WINDOW_ALGORITHM,plot,rate_label,rate_plot_rows,rate_prefix,window_label,window_sample
 
 def duration(value):
@@ -37,7 +37,7 @@ class HistoryWindow:
         self.window.attributes('-topmost',True)
         self.window.geometry('1320x1180')
         self.window.minsize(1100,1080)
-        self.window.configure(bg='#ffffff')
+        configure_window(self.window)
         style=ttk.Style()
         self.scale=max(1,root.winfo_fpixels('1i')/96)
         configure_history(style,self.scale)
@@ -85,7 +85,7 @@ class HistoryWindow:
         self.rate_selector.bind('<<ComboboxSelected>>',self.select_rate_view)
         self.rate_hint=tk.StringVar(value='观测未满窗口时按实际采样时长计算')
         ttk.Label(rate_controls,textvariable=self.rate_hint).pack(side='right')
-        self.chart=tk.Canvas(right,bg='#ffffff',height=175,highlightthickness=0)
+        self.chart=tk.Canvas(right,bg=SURFACE,height=175,highlightthickness=0)
         self.chart.pack(fill='x',padx=14,pady=(6,0))
         ttk.Label(right,text='横轴为所选日期 / 记录范围；不同算法、采样段及缺失处断线。').pack(anchor='w',padx=14)
         chart_controls=ttk.Frame(right)
@@ -94,7 +94,7 @@ class HistoryWindow:
         ttk.Button(chart_controls,text='全部记录',command=self.all_sessions).pack(side='left',padx=10)
         ttk.Button(chart_controls,text='后30分',command=lambda:self.page_minutes(1)).pack(side='right')
         ttk.Button(chart_controls,text='前30分',command=lambda:self.page_minutes(-1)).pack(side='right',padx=4)
-        self.minute_chart=tk.Canvas(right,bg='#ffffff',height=205,highlightthickness=0)
+        self.minute_chart=tk.Canvas(right,bg=SURFACE,height=205,highlightthickness=0)
         self.minute_chart.pack(fill='x',padx=14,pady=(6,0))
         self.chart_hint=tk.StringVar(value='每根柱代表一个自然分钟；悬停查看精确数值。')
         ttk.Label(right,textvariable=self.chart_hint).pack(anchor='w',padx=14,pady=(0,8))
@@ -330,16 +330,16 @@ class HistoryWindow:
             versions={r.get('window_algorithm') or 'legacy' for r in self.rows if window_sample(r,window)['value'] is not None}
             caption='混合版本（见明细）' if len(versions)>1 else ('旧60秒口径 · 覆盖未知' if versions=={'legacy'} else '有效观测窗口')
             title=f'{window_label(window)} 分均曲线'
-        c.create_text(12,8,text=title+(f' · {caption}' if caption else ''),fill=INK,anchor='nw',font=(FONT,11,'bold'))
+        c.create_text(12,8,text=title+(f' · {caption}' if caption else ''),fill=INK,anchor='nw',font=(FONT,-round(14*self.scale),'bold'))
         rows=data['plot_rows'] if data else rate_plot_rows(self.rows,window_seconds=window)
         if not rows:
-            c.create_text(width/2,90,text='所选口径没有已保存的有效值；旧记录不会补算窗口。',fill='#64748b',width=width-30)
+            c.create_text(width/2,90,text='所选口径没有已保存的有效值；旧记录不会补算窗口。',fill=MUTED,width=width-30)
             return
-        chart_scale=min(self.scale,1.25)
+        chart_scale=self.scale
         plot(c,(10/chart_scale,35/chart_scale,(width-20)/chart_scale,138/chart_scale),
              rows,
              scale=chart_scale,time_range=(self.rows[0]['timestamp'],self.rows[-1]['timestamp']),
-             max_gap=None if data else 10)
+             max_gap=None if data else 10,palette=MIDNIGHT)
 
     def page_minutes(self,direction):
         if getattr(self,'_requested_key',None) is not None:return
@@ -355,9 +355,9 @@ class HistoryWindow:
         c=self.minute_chart
         width=max(300,c.winfo_width())
         if not getattr(self,'_render_data',None):self.minute_data=minute_buckets(self.rows)
-        self.chart_hint.set('每根柱代表一个自然分钟；悬停查看数值，深蓝色为当前分钟。')
+        self.chart_hint.set('每根柱代表一个自然分钟；悬停查看数值，亮蓝色为当前分钟。')
         if not self.minute_data:
-            c.create_text(width/2,90,text='暂无分钟明细；只有汇总的旧记录不拆分估算。',fill='#64748b',width=width-30)
+            c.create_text(width/2,90,text='暂无分钟明细；只有汇总的旧记录不拆分估算。',fill=MUTED,width=width-30)
             return
         last=max(0,len(self.minute_data)-30)
         start=last if self.minute_offset is None else min(self.minute_offset,last)
@@ -366,25 +366,25 @@ class HistoryWindow:
         caption=f"每分钟获得经验   ·   此段总计 {subtotal:,}"
         if any(r.get('status')=='legacy_summary' for r in self.rows):
             caption+='（不含旧版汇总）'
-        c.create_text(12,8,text=caption,fill=INK,anchor='nw',font=(FONT,11,'bold'))
+        c.create_text(12,8,text=caption,fill=INK,anchor='nw',font=(FONT,-round(14*self.scale),'bold'))
         peak=max(1,max(r['gain'] for r in rows))
-        left,right,top,bottom=60,width-12,43,170
+        left,right,top,bottom=round(60*self.scale),width-12,43,170
         for ratio in (0,.5,1):
             y=bottom-(bottom-top)*ratio
-            c.create_line(left,y,right,y,fill='#e5edf7',dash=(3,4))
-            c.create_text(left-7,y,text=f'{peak*ratio:,.0f}',fill='#64748b',anchor='e',font=('Segoe UI',9))
+            c.create_line(left,y,right,y,fill=MIDNIGHT['line'],dash=(3,4))
+            c.create_text(left-7,y,text=f'{peak*ratio:,.0f}',fill=MUTED,anchor='e',font=(FONT,-round(9*self.scale)))
         step=(right-left)/len(rows)
         self.minute_hit=(left,right,top,bottom,rows)
         current=int(time.time()//60)*60
         for index,row in enumerate(rows):
             x=left+index*step
             height=(bottom-top)*row['gain']/peak
-            color='#1d4ed8' if row['timestamp']==current else '#76a9fa'
+            color=MIDNIGHT['accent'] if row['timestamp']==current else MIDNIGHT['bar']
             tag=f'minute_{index}'
             if row['observed']:
                 c.create_rectangle(x+2,bottom-max(2,height),x+max(3,step-2),bottom,fill=color,outline='',tags=(tag,))
             else:
-                c.create_line(x+2,bottom-2,x+max(3,step-2),bottom-2,fill='#94a3b8',dash=(2,2),tags=(tag,))
+                c.create_line(x+2,bottom-2,x+max(3,step-2),bottom-2,fill=MUTED,dash=(2,2),tags=(tag,))
             # A transparent hit area makes zero-gain minutes easy to inspect too.
             c.create_rectangle(x,top,x+step,bottom,fill='',outline='',tags=(tag,))
             label=format_time(row['timestamp'],'%H:%M')
@@ -394,7 +394,7 @@ class HistoryWindow:
             last_index=len(rows)-1
             spacing=max(2,int(60/max(step,1))+1)
             if (index%max(1,(len(rows)+4)//5)==0 and index<=last_index-spacing) or index==last_index:
-                c.create_text(x+step/2,188,text=label,fill='#64748b',font=('Segoe UI',9))
+                c.create_text(x+step/2,188,text=label,fill=MUTED,font=(FONT,-round(9*self.scale)))
 
     def hover_minute(self,event):
         if getattr(self,'_requested_key',None) is not None:return

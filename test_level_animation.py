@@ -51,7 +51,9 @@ class LevelAnimationTests(unittest.TestCase):
         self.assertTrue(calls)
         self.assertNotIn(main_thread,calls)
         self.assertEqual(self.canvas.itemcget(self.label,'state'),'hidden')
-        effect.render(effect.started+effect.DURATION)
+        # Move past the boundary: subtraction of monotonic floats can round
+        # an exact start + duration back below duration at some system uptimes.
+        effect.render(effect.started+effect.DURATION+.001)
         self.assertFalse(effect.active)
         self.assertIsNone(effect.photo)
         self.assertEqual(self.canvas.itemcget(self.label,'state'),'')

@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from ui_charts import RATE_VIEWS, plot, rate_plot_rows, rate_prefix
-from ui_theme import WARNING, configure_history
+from ui_theme import WARNING, configure_history, configure_window, SURFACE, MIDNIGHT
 
 
 WINDOW_SECONDS = (60, 120, 300, 600, 1800)
@@ -38,13 +38,13 @@ def window_row(snapshot, window_seconds):
     observed = min(window_seconds, max(0, sample.get('observed_seconds') or 0))
     value = sample.get('value')
     valid = value is not None and observed > 0 and state in ('warming', 'ready')
-    retrying = snapshot.get('display_state') == 'retrying'
+    retrying = snapshot.get('display_state') in ('retrying','held')
     restored = snapshot.get('display_state') == 'restored'
     interrupted = snapshot.get('display_state') == 'visibility_paused'
     number = rate_prefix(sample, observed < window_seconds or retrying or restored or interrupted) + f'{value:,.0f}' if valid else '—'
     # Tenths avoid displaying a full window before the first complete one exists.
     coverage = f'{math.floor(observed * 10) / 10:.1f} / {window_seconds:g} 秒'
-    label = ('切屏暂停' if interrupted else '已恢复' if restored and valid else '识别重试' if retrying and valid
+    label = ('切屏暂停' if interrupted else '已恢复' if restored and valid else '待更新' if snapshot.get('display_state')=='held' and valid else '识别重试' if retrying and valid
              else STATE_LABELS.get(state, STATE_LABELS['unavailable']))
     if sample.get('has_gaps') and valid and not (retrying or restored or interrupted):
         label='尾段未计'
@@ -65,7 +65,7 @@ class MultiscaleWindow:
         self._chart_rows = []
         self.window = tk.Toplevel(root)
         self.window.title('经验观察器 · 多尺度分均')
-        self.window.configure(bg='white')
+        configure_window(self.window)
         self.window.attributes('-topmost', True)
         self.window.geometry(f'{self.p(720)}x{self.p(680)}')
         self.window.minsize(self.p(640), self.p(600))
@@ -80,7 +80,7 @@ class MultiscaleWindow:
         outer.pack(fill='both', expand=True)
         ttk.Label(outer, text='多尺度分均', style='HistoryTitle.TLabel').pack(anchor='w')
         ttk.Label(
-            outer, text='按有效采样时间计算；切屏与重启接续进度，手动暂停或可见画面长断采后重建。',
+            outer, text='按有效采样时间计算；切屏、识别中断与重启接续进度，手动暂停或新建记录重新采样。',
             style='History.TLabel', wraplength=self.p(580),
         ).pack(anchor='w', pady=(self.p(8), self.p(16)))
 
@@ -122,7 +122,7 @@ class MultiscaleWindow:
             anchor='w', pady=(self.p(16), self.p(4)))
         self.chart_hint = tk.StringVar()
         ttk.Label(outer, textvariable=self.chart_hint, style='History.TLabel').pack(anchor='w')
-        self.chart = tk.Canvas(outer, bg='white', height=self.p(180), highlightthickness=0)
+        self.chart = tk.Canvas(outer, bg=SURFACE, height=self.p(180), highlightthickness=0)
         self.chart.pack(fill='both', expand=True, pady=(self.p(8), 0))
         self.chart.bind('<Configure>', lambda event: self.draw_chart())
 
@@ -145,7 +145,7 @@ class MultiscaleWindow:
         snapshot = self.backend.display_rate_snapshot()
         for seconds in WINDOW_SECONDS:
             row = window_row(snapshot, seconds)
-            held = row[3] in ('已恢复','识别重试','切屏暂停')
+            held = row[3] in ('已恢复','识别重试','切屏暂停','待更新')
             self.table.item(str(seconds), values=row, tags=('held',) if held else ())
         hint = ('切屏暂停 · 已保留分均与采样进度；等待新读数，离屏时间与经验不计入。'
                 if snapshot.get('display_state') == 'visibility_paused' and snapshot.get('visibility_preserved') else
@@ -155,8 +155,12 @@ class MultiscaleWindow:
                 if snapshot.get('display_state') == 'restored' else
                 '重试中 · 暂显 ' + f"{snapshot['display_age_seconds']:.1f} 秒前的有效分均"
                 if snapshot.get('display_state') == 'retrying'
+                else '等待读数 · 保留 ' + f"{snapshot['display_age_seconds']:.0f} 秒前的分均与采样进度"
+                if snapshot.get('display_state') == 'held'
                 else '≥ 为缺少升级尾段的收益下限。')
         self.table_hint.set(hint)
+        reporter=getattr(self.backend,'diagnostic_surface',None)
+        if callable(reporter):reporter('multiscale',snapshot)
         session = self.backend.history.active
         now = time.monotonic()
         if (session != self._cache_session or self._cache_time is None
@@ -186,7 +190,7 @@ class MultiscaleWindow:
         rows = rate_plot_rows(saved, seconds)
         width, height = max(self.p(300), self.chart.winfo_width()), max(self.p(110), self.chart.winfo_height())
         plot(self.chart, (0, 0, width / self.scale, height / self.scale), rows,
-             scale=self.scale, time_range=(start, end))
+             scale=self.scale, time_range=(start, end),palette=MIDNIGHT)
 
     def _cancel_timer(self):
         if self._after_id is not None:

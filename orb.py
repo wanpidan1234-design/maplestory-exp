@@ -101,7 +101,7 @@ def rate_window_display(snapshot, seconds):
     observed = min(seconds, max(0, sample.get('observed_seconds') or 0))
     value = sample.get('value')
     available = state in ('warming', 'ready') and value is not None and observed > 0
-    retrying = available and snapshot.get('display_state') == 'retrying'
+    retrying = available and snapshot.get('display_state') in ('retrying','held')
     restored = available and snapshot.get('display_state') == 'restored'
     interrupted = snapshot.get('display_state') == 'visibility_paused'
     number = rate_prefix(sample, observed < seconds or retrying or restored or interrupted) + compact(value) if available else '—'
@@ -112,7 +112,8 @@ def rate_window_display(snapshot, seconds):
         if interrupted:
             caption = '切屏暂停'
         elif retrying:
-            caption = '重试' if observed >= seconds else f'重试 · 已采样 {duration}'
+            label = '待更新' if snapshot.get('display_state')=='held' else '重试'
+            caption = label if observed >= seconds else f'{label} · 已采样 {duration}'
         elif restored:
             caption = '已恢复' if observed >= seconds else f'已恢复 · 采样{duration}'
     elif interrupted:
@@ -496,7 +497,7 @@ class Orb:
             self.position(window,x,y)
 
     def context(self,event):
-        menu = tk.Menu(self.ball,tearoff=False,bg='#ffffff',fg=INK,activebackground='#dceaff',activeforeground=INK,font=('Microsoft YaHei UI',10))
+        menu = tk.Menu(self.ball,tearoff=False,bg=MIDNIGHT['raised'],fg=INK,activebackground=MIDNIGHT['selection'],activeforeground=INK,font=('Microsoft YaHei UI',10))
         menu.add_command(label='展开 / 收起统计',command=self.toggle_panel)
         menu.add_command(label='暂停 / 继续',command=self.toggle)
         menu.add_command(label='历史回看 / 每日总计',command=self.show_history)
@@ -531,6 +532,8 @@ class Orb:
             return '核验变化',WARNING
         if snapshot.get('display_state')=='retrying':
             return '识别重试',WARNING
+        if snapshot.get('display_state')=='held':
+            return '等待读数',WARNING
         if not b.fresh_reading():
             return '等待识别',WARNING
         if snapshot['primary']['state']=='warming':
@@ -541,7 +544,7 @@ class Orb:
         b=self.backend;snapshot=b.display_rate_snapshot();state,color=self.state(snapshot)
         rate=snapshot['primary']
         retrying=snapshot.get('display_state')=='retrying'
-        held=retrying or snapshot.get('display_state') in ('restored','visibility_paused')
+        held=retrying or snapshot.get('display_state') in ('held','restored','visibility_paused')
         minute=rate['value']
         fresh=minute is not None
         # The expanded panel may have its own fit-to-screen scale. The orb
@@ -564,11 +567,17 @@ class Orb:
                 self.canvas.itemconfigure(self.ball_value,text=text,font=(family,-round(size*s)),anchor='center',fill='#c3dcec')
                 self.canvas.itemconfigure(self.ball_unit,state='hidden')
         if not fresh and self.ball_motion.pulse_started is not None:self.ball_motion.clear()
+        reporter=getattr(b,'diagnostic_surface',None)
+        if callable(reporter):
+            reporter('orb',snapshot,reason='animation_active' if self.ball_level.active else 'configured')
 
     def paint_panel(self):
         if not self.panel or not self.midnight_panel:
             return
-        self.midnight_panel.paint(self.backend.display_rate_snapshot(),rate_window_display)
+        snapshot=self.backend.display_rate_snapshot()
+        self.midnight_panel.paint(snapshot,rate_window_display)
+        reporter=getattr(self.backend,'diagnostic_surface',None)
+        if callable(reporter):reporter('panel',snapshot)
         self.paint_minutes()
 
     def paint_minutes(self):

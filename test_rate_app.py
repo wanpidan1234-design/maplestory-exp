@@ -411,7 +411,8 @@ class RateAppTests(unittest.TestCase):
         self.assertFalse(data['valid'])
         self.assertEqual(data['rate_state'], 'stale')
         self.assertIsNone(data['realtime_per_minute'])
-        b.metrics[1].configure.assert_called_with(text='—')
+        b.metrics[1].configure.assert_called_with(text='0')
+        self.assertEqual(data['display_state'],'held')
 
     def test_five_windows_share_observed_time_quality_and_saved_values(self):
         b = self.backend
@@ -462,7 +463,7 @@ class RateAppTests(unittest.TestCase):
         shown['windows']['60']['value'] = 99999
         self.assertEqual(b.display_rate_snapshot()['windows']['60']['value'], 6000)
 
-    def test_repeated_failures_do_not_extend_retry_deadline_or_coverage(self):
+    def test_repeated_failures_keep_values_without_extending_age_or_coverage(self):
         b = self.backend
         self.receive(100, 1000)
         self.receive(101, 1100)
@@ -473,19 +474,63 @@ class RateAppTests(unittest.TestCase):
             self.assertEqual(shown['primary']['observed_seconds'], 1)
             self.assertAlmostEqual(shown['display_age_seconds'], at-101)
         self.now[0] = 103.001
-        b.tick()  # Expiry requires no additional failed frame.
-        self.assertIsNone(b.display_rate_snapshot()['primary']['value'])
-        b.metrics[1].configure.assert_called_with(text='—')
-        self.assertNotIn('显示', b.status.get())
+        b.tick()  # Switch the label after the short retry; keep committed data.
+        self.assertEqual(b.display_rate_snapshot()['primary']['value'],6000)
+        self.assertEqual(b.display_rate_snapshot()['display_state'],'held')
+        b.metrics[1].configure.assert_called_with(text='6,000')
+        self.assertIn('等待读数', b.status.get())
         self.assertEqual(len(b.records), 2)
         self.assertEqual(b.tracker.total, 100)
+
+    def test_long_display_hold_preserves_exp_percent_and_all_windows_without_writing_samples(self):
+        b=self.backend
+        self.receive(100,1000)
+        b.latest=Reading(1100,None,25.5)
+        self.receive(101,1100)
+        # Commit a reading that includes percentage, through the real queue.
+        self.now[0]=102
+        b.events.put((b.generation,np.zeros((8,20,3),dtype=np.uint8),'1200',
+                      Reading(1200,None,26.5),None,{'observed_at':102}))
+        b.tick()
+        before=b.display_rate_snapshot();count=len(b.records)
+        for at in (103,106,135,3702):
+            self.receive(at,None)
+            shown=b.display_rate_snapshot()
+            self.assertEqual(shown['current_exp'],1200)
+            self.assertEqual(shown['current_percent'],26.5)
+            self.assertEqual(shown['windows'],before['windows'])
+            self.assertEqual(shown['display_age_seconds'],at-102)
+            self.assertFalse(b.fresh_reading())
+            self.assertIsNone(b.primary_rate_snapshot()['value'])
+            self.assertEqual(len(b.records),count)
+            self.assertEqual(b.tracker.total,200)
+        data=self.status_json()
+        self.assertEqual(data['display_current_exp'],1200)
+        self.assertFalse(data['valid'])
+        self.receive(3703,2200)
+        self.assertEqual(b.display_rate_snapshot()['display_state'],'live')
+        self.assertEqual(b.display_rate_snapshot()['current_exp'],2200)
+        self.assertEqual(len(b.records),count+1)
+
+    def test_worker_delay_and_expired_frame_hold_the_same_committed_snapshot(self):
+        b=self.backend
+        self.receive(100,1000);self.receive(101,1100)
+        before=b.display_rate_snapshot()
+        self.now[0]=134;b.tick()  # A busy worker has delivered no result at all.
+        self.assertEqual(b.display_rate_snapshot()['windows'],before['windows'])
+        self.assertEqual(b.display_rate_snapshot()['display_state'],'held')
+        self.receive(135,9000,captured=102)  # Reject an old frame without flicker.
+        self.assertEqual(b.display_rate_snapshot()['current_exp'],1100)
+        self.assertEqual(b.tracker.total,100)
+        self.assertEqual(len(b.records),2)
 
     def test_retry_age_uses_capture_time_not_slow_delivery_time(self):
         b = self.backend
         self.receive(100, 1000)
         self.receive(102.8, 1100, captured=101)
         self.receive(103.1, None)
-        self.assertIsNone(b.display_rate_snapshot()['primary']['value'])
+        self.assertEqual(b.display_rate_snapshot()['display_state'],'held')
+        self.assertAlmostEqual(b.display_rate_snapshot()['display_age_seconds'],2.1)
         self.assertEqual(b.last_valid_monotonic, 101)
 
     def test_retry_recovery_books_real_gain_once_then_long_gap_continues(self):
@@ -524,13 +569,13 @@ class RateAppTests(unittest.TestCase):
         self.assertIsNone(b.display_rate_snapshot()['primary']['value'])
         self.assertEqual(b.tracker.total, 100)
 
-    def test_only_ocr_exception_can_hold_and_capture_failure_revokes_it(self):
+    def test_ocr_and_capture_failures_keep_committed_display_without_accounting(self):
         b = self.backend
         self.receive(100, 1000)
         self.receive(101, 1100)
         for at, stage, held in ((101.2, 'experience_ocr', True),
-                                (101.4, 'occluded', False),
-                                (101.6, 'experience_ocr', False)):
+                                (101.4, 'occluded', True),
+                                (101.6, 'experience_ocr', True)):
             self.now[0] = at
             b.events.put((b.generation, None, '', None, 'failure',
                           {'failure_stage': stage, 'observed_at': at}))
@@ -538,13 +583,13 @@ class RateAppTests(unittest.TestCase):
             self.assertEqual(b.display_rate_snapshot()['primary']['value'] is not None, held)
         self.assertEqual(len(b.records), 2)
 
-    def test_pause_new_generation_and_level_pending_never_hold_old_rates(self):
+    def test_level_pending_holds_rates_but_pause_and_new_generation_revoke_them(self):
         b = self.backend
         self.receive(100, 1000)
         self.receive(101, 1100)
         self.receive(101.2, None)
         b.auto_level.wait_since = 101.2
-        self.assertIsNone(b.display_rate_snapshot()['primary']['value'])
+        self.assertEqual(b.display_rate_snapshot()['primary']['value'],6000)
         b.auto_level.wait_since = None
         b.generation += 1
         self.assertIsNone(b.display_rate_snapshot()['primary']['value'])

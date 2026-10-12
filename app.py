@@ -26,8 +26,10 @@ from auto_level import AutoLevel
 from history_store import HistoryStore
 from app_time import format_time
 from combat_service import CombatService
-from recognition_diagnostics import RecognitionJournal
+from recognition_diagnostics import AsyncRecognitionJournal
+from analysis_log import AnalysisJournal
 from ui_charts import rate_prefix
+from ui_theme import configure_history, configure_window, SURFACE, MIDNIGHT, INK, MUTED, ACCENT, FONT
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = Path(os.environ.get('LOCALAPPDATA', str(ROOT))) / 'MapleExpTracker' / 'settings.json'
@@ -37,18 +39,21 @@ DISPLAY_RETRY_SECONDS = 2.0
 class App:
     def __init__(self, root):
         self.root = root
+        try:
+            self.analysis_journal = AnalysisJournal(CONFIG.parent/'analysis-logs')
+        except Exception as error:
+            self.analysis_journal = None
+            self._diagnostic_init_error = type(error).__name__
+        self.log_event('app_started', pid=os.getpid(), python_version=sys.version.split()[0])
+        self._previous_callback_exception = root.report_callback_exception
+        root.report_callback_exception = self.report_callback_exception
         root.title('冒险岛 · 经验观察器')
         root.geometry('1050x920')
         root.minsize(740, 640)
-        root.configure(bg='#ffffff')
-        style = ttk.Style()
+        configure_window(root)
+        style = ttk.Style(root)
         style.theme_use('clam')
-        style.configure('.', font=('Microsoft YaHei UI', 10), background='#ffffff', foreground='#16324f')
-        style.configure('TButton', background='#edf4ff', padding=(12, 8))
-        style.map('TButton', background=[('active', '#dceaff')])
-        style.configure('TEntry', fieldbackground='#ffffff', foreground='#16324f')
-        style.configure('Title.TLabel', font=('Microsoft YaHei UI', 23, 'bold'))
-        style.configure('Sub.TLabel', foreground='#64748b')
+        configure_history(style,max(1,root.winfo_fpixels('1i')/96))
         self.tracker = Tracker()
         self.auto_level = AutoLevel(self.tracker)
         self.history = HistoryStore(Path(os.environ.get('MAPLE_EXP_DATA_DIR',str(ROOT/'data')))/'history.sqlite3')
@@ -86,17 +91,17 @@ class App:
         cards.pack(fill='x')
         self.metrics = []
         for title in ('本次累计经验', '最近 1 分钟分均 / EXP·min', '全程分均 / EXP·min'):
-            frame = tk.Frame(cards, bg='#f4f8fd', padx=16, pady=18)
+            frame = tk.Frame(cards, bg=MIDNIGHT['raised'], padx=16, pady=18)
             frame.pack(side='left', expand=True, fill='both', padx=(0, 8))
-            tk.Label(frame, text=title, bg='#f4f8fd', fg='#64748b', font=('Microsoft YaHei UI', 10)).pack(anchor='w')
-            label = tk.Label(frame, text='0', bg='#f4f8fd', fg='#2563eb', font=('Segoe UI', 20, 'bold'))
+            tk.Label(frame, text=title, bg=MIDNIGHT['raised'], fg=MUTED, font=('Microsoft YaHei UI', 10)).pack(anchor='w')
+            label = tk.Label(frame, text='0', bg=MIDNIGHT['raised'], fg=ACCENT, font=('Segoe UI', 20, 'bold'))
             label.pack(anchor='w', pady=(8, 0))
             self.metrics.append(label)
         ttk.Label(outer, textvariable=self.elapsed, style='Sub.TLabel').pack(anchor='w', pady=12)
         buttons = ttk.Frame(outer)
         buttons.pack(fill='x')
         ttk.Button(buttons, text='① 框选经验栏', command=self.select).pack(side='left', padx=(0, 8))
-        self.start_button = ttk.Button(buttons, text='② 开始记录', command=self.toggle)
+        self.start_button = ttk.Button(buttons, text='② 开始记录', command=self.toggle,style='Primary.TButton')
         self.start_button.pack(side='left', padx=(0, 8))
         ttk.Button(buttons, text='重置统计', command=self.reset).pack(side='left', padx=(0, 8))
         ttk.Button(buttons, text='导出 CSV', command=self.export).pack(side='left')
@@ -106,7 +111,7 @@ class App:
         ttk.Label(settings, text='当前等级升级所需经验（可选）').pack(side='left')
         ttk.Entry(settings, textvariable=self.manual, width=17).pack(side='left', padx=8)
         ttk.Checkbutton(settings, text='窗口置顶', variable=self.topmost, command=lambda: root.attributes('-topmost', self.topmost.get())).pack(side='right')
-        self.preview = tk.Label(outer, text='框选后的画面预览', bg='#f4f8fd', fg='#64748b', height=5)
+        self.preview = tk.Label(outer, text='框选后的画面预览', bg=MIDNIGHT['raised'], fg=MUTED, height=5)
         self.preview.pack(fill='x', pady=(0, 12))
         ttk.Label(outer, textvariable=self.raw, wraplength=700, style='Sub.TLabel').pack(anchor='w')
         ttk.Label(outer, textvariable=self.status, wraplength=700).pack(anchor='w', pady=12)
@@ -114,7 +119,7 @@ class App:
         recovery.pack(fill='x')
         ttk.Button(recovery, text='确认刚刚升了一级', command=self.level).pack(side='left', padx=(0, 8))
         ttk.Button(recovery, text='以当前读数接续（跳过差值）', command=self.rebase).pack(side='left')
-        ttk.Label(outer, text='主数字为最近 1 分钟观测分均；未满 60 秒按实际时长折算。\n识别重试时暂显 2 秒内的上次可信值；超时显示空缺，超过 5 秒断采后重建窗口。\n速度趋势为辅助指数估算，可在多尺度窗口查看；全程均速 = 本次累计 ÷ 有效计时。\n只框选经验数字。自动模式会跟随游戏窗口；手动选区需自行更新。', style='Sub.TLabel', wraplength=700).pack(anchor='w', pady=18)
+        ttk.Label(outer, text='主数字为最近 1 分钟观测分均；未满 60 秒按实际时长折算。\n识别中断时保留可信数值和采样进度，并标明等待状态；恢复后继续采样。\n速度趋势为辅助指数估算，可在多尺度窗口查看；全程均速 = 本次累计 ÷ 有效计时。\n只框选经验数字。自动模式会跟随游戏窗口；手动选区需自行更新。', style='Sub.TLabel', wraplength=700).pack(anchor='w', pady=18)
         try:
             config = json.loads(CONFIG.read_text(encoding='utf-8'))
             self.region = config.get('region')
@@ -127,13 +132,159 @@ class App:
         if '--auto-start' in sys.argv:
             self.root.after(600, self.auto_game)
 
+    def log_event(self, event, *, key=None, interval=0, context=False, **fields):
+        """Diagnostics are optional and must never change application control flow."""
+        journal = getattr(self, 'analysis_journal', None)
+        if journal is None:
+            return False
+        try:
+            return journal.emit(event, fields, key=key, interval=interval, context=context)
+        except Exception:
+            self._diagnostic_hook_errors = getattr(self, '_diagnostic_hook_errors', 0) + 1
+            return False
+
+    def diagnostic_anchor(self):
+        now=time.monotonic()
+        previous=getattr(self,'_diagnostic_anchor_at',None)
+        anchor=previous is None or now-previous>=5
+        if anchor:self._diagnostic_anchor_at=now
+        return anchor
+
+    def diagnostic_state(self):
+        """O(five windows), never copy event queues or serialize a resume snapshot."""
+        if getattr(self, 'analysis_journal', None) is None:
+            return None
+        try:
+            t = self.tracker
+            pending = t._resume_rates if t.resume_pending else None
+            observed = (pending['observed_seconds'] if pending is not None else
+                        t.live.last_observed_at-t.live.origin
+                        if t.live.origin is not None else 0)
+            return dict(running=self.running, reading_valid=self.reading_valid,
+                blocked=t.blocked, resume_pending=t.resume_pending,
+                visibility_interrupted=t.visibility_interrupted, paused=t._paused,
+                needs_baseline=t._needs_baseline, current=t.previous, total=t.total,
+                elapsed=t.elapsed, segment=t.live.segment, observed_seconds=observed,
+                windows={str(seconds): dict(count=None if pending is not None else len(t.windows.events[seconds]),
+                    sum=None if pending is not None else t.windows.running_sum[seconds], observed_seconds=min(seconds,observed))
+                    for seconds in WINDOW_SECONDS})
+        except Exception:
+            return None
+
+    def diagnostic_result(self, outcome, info, before, *, delta=None, baseline_reason=None):
+        journal = getattr(self, 'analysis_journal', None)
+        if journal is None:
+            return
+        try:
+            now = time.monotonic()
+            trace = info.get('analysis', {})
+            observed = info.get('observed_at')
+            enqueued = trace.get('enqueued_at')
+            guard = self.auto_level
+            after = self.diagnostic_state()
+            recognition = info.get('recognition') or {}
+            details = recognition.get('fields') or {}
+            sample_gap = (observed-trace['previous_observed_at']
+                          if isinstance(observed,(int,float)) and trace.get('previous_observed_at') is not None else None)
+            accepted = outcome in ('ok','baseline','gap','auto_level','auto_level_gap')
+            disposition = ('baseline_only' if outcome=='baseline' else
+                'ledger_only' if outcome=='gap' or accepted and sample_gap is not None and sample_gap>self.tracker.live.max_gap else
+                'observed_interval' if accepted else 'pending' if outcome=='level_pending' else 'not_counted')
+            fields = dict(sample_id=trace.get('sample_id'), generation=trace.get('generation',self.generation),
+                source=info.get('source'),stage='after_feed' if delta is not None else 'result_validation',outcome=outcome,
+                anchor=trace.get('anchor',False),
+                observed_at=observed, worker_started_at=trace.get('worker_started_at'),
+                enqueued_at=enqueued, consumed_at=trace.get('consumed_at',now),
+                queue_age=(trace.get('consumed_at',now)-enqueued if enqueued is not None else None),
+                frame_age=self.tracker.clock()-observed if isinstance(observed,(int,float)) else None,
+                sample_gap=sample_gap,
+                timing_ms=info.get('timing_ms'), failure_stage=info.get('failure_stage'),
+                failure_kind=info.get('failure_kind'), visibility_reason=info.get('visibility_reason'),
+                error_type=info.get('error_type'), ocr_path=recognition.get('path'),
+                ocr_reason=recognition.get('reason'), percent_reason=details.get('percent',{}).get('reason'),
+                level_reason=info.get('level_error_type'), delta=delta, attempted=accepted,
+                baseline_reason=baseline_reason, before=before, after=after,
+                gain_disposition=disposition,
+                level=dict(candidate=guard.candidate,count=guard.count,
+                           vote_span=guard.last_time-guard.since if guard.count and guard.last_time is not None else None,
+                           wait_age=self.tracker.clock()-guard.wait_since if guard.wait_since is not None else None,
+                           confirmed_level=self.tracker.level,confirmed_levels=self.tracker.confirmed_levels,
+                           level_gaps=self.tracker.level_gaps))
+            signature=(outcome,fields['ocr_reason'],fields['failure_stage'],fields['error_type'],
+                       fields['level_reason'],fields['percent_reason'],guard.candidate if outcome=='level_pending' else None)
+            previous = getattr(self,'_diagnostic_outcome',None)
+            self._diagnostic_outcome = signature
+            force=outcome!='ok' or previous!=signature
+            self._diagnostic_force_current=force
+            reason=fields['ocr_reason'] or fields['failure_stage'] or fields['level_reason'] or fields['percent_reason'] or 'none'
+            if force or trace.get('anchor'):
+                self.log_event('sample_decision', key=(outcome,reason,fields['error_type'] or 'none'),
+                    interval=5 if previous==signature and outcome!='ok' else 0, context=outcome!='ok', **fields)
+            journal.observe(dict(sample_id=trace.get('sample_id'),generation=self.generation,
+                outcome=outcome,reason=fields['ocr_reason'] or fields['failure_stage'],
+                current=after.get('current') if after else None,
+                segment=after.get('segment') if after else None,observed_at=observed))
+        except Exception:
+            self._diagnostic_hook_errors = getattr(self, '_diagnostic_hook_errors', 0) + 1
+
+    def diagnostic_surface(self, surface, snapshot, *, reason='configured'):
+        """Report control configuration returns, not proof of screen pixels."""
+        if getattr(self, 'analysis_journal', None) is None:
+            return
+        try:
+            presence = dict(primary=snapshot['primary']['value'] is not None,
+                current=snapshot.get('current_exp') is not None,
+                percent=snapshot.get('current_percent') is not None,
+                windows={key:row['value'] is not None for key,row in snapshot['windows'].items()})
+            signature = (snapshot.get('display_state'),snapshot.get('cache_reason'),reason,
+                         presence['primary'],presence['current'],presence['percent'],
+                         tuple(presence['windows'].values()))
+            states = getattr(self,'_diagnostic_surfaces',None)
+            if states is None:
+                states = self._diagnostic_surfaces = {}
+            if states.get(surface)==signature:
+                return
+            states[surface]=signature
+            self.log_event('display_transition' if surface=='backend' else 'surface_configured',
+                surface=surface,reason=reason,generation=self.generation,
+                raw_state=self.rate_snapshot()['state'],display_state=snapshot.get('display_state'),
+                cache_reason=snapshot.get('cache_reason'),presence=presence,
+                display_age_seconds=snapshot.get('display_age_seconds'),
+                display_observation_id=snapshot.get('display_observation_id'))
+        except Exception:
+            self._diagnostic_hook_errors = getattr(self, '_diagnostic_hook_errors', 0) + 1
+
+    def report_callback_exception(self, exception_type, value, tb):
+        last = tb
+        for _ in range(32):
+            if last is None or last.tb_next is None:
+                break
+            last = last.tb_next
+        self.log_event('ui_callback_exception', error_type=exception_type.__name__,
+            action=last.tb_frame.f_code.co_name if last is not None else 'unknown', context=True)
+        # Preserve Tk's existing reporting; diagnostics neither swallow nor retry.
+        self._previous_callback_exception(exception_type, value, tb)
+
+    def diagnostic_health(self):
+        try:
+            journal = getattr(self,'analysis_journal',None)
+            evidence = getattr(self,'recognition_journal',None)
+            roi = evidence.status() if evidence is not None and hasattr(evidence,'status') else None
+            return dict(analysis=journal.status() if journal is not None else None,
+                recognition=roi if isinstance(roi,dict) else None,
+                hook_errors=getattr(self,'_diagnostic_hook_errors',0),
+                init_error=getattr(self,'_diagnostic_init_error',None),
+                directory=str(CONFIG.parent/'analysis-logs'))
+        except Exception as error:
+            return dict(health_error=type(error).__name__)
+
     def auto_game(self):
         if self.running and self.region and self.region.get('game_window'):
             # GameCapture already rechecks client geometry every frame. A second
             # locate request must not act as a manual pause/new rate segment.
             return
         if not self.tracker.resume_pending:
-            self.pause()
+            self.pause(reason='source_reselect')
         elif self.running:
             self.generation += 1
             self.combat.set_state(False, self.generation)
@@ -156,6 +307,7 @@ class App:
         CONFIG.write_text(json.dumps({'region': self.region, 'cap': self.manual.get()}), encoding='utf-8')
 
     def close(self):
+        self.log_event('app_closing', before=self.diagnostic_state())
         try:
             self.combat.close()
             # Export before pause clears the observation windows. The stored
@@ -163,14 +315,29 @@ class App:
             self.persist_time()
             self.save()
         finally:
+            evidence = getattr(self,'recognition_journal',None)
+            try:
+                if evidence is not None and hasattr(evidence,'close'):
+                    evidence.close(timeout=.2)
+            except Exception:
+                pass
+            self.log_event('app_closed', after=self.diagnostic_state())
+            journal = getattr(self,'analysis_journal',None)
+            try:
+                if journal is not None:
+                    journal.close(timeout=.2)
+            except Exception:
+                pass
             self.history.db.close()
             self.root.destroy()
 
     def restore_statistics(self):
         """Resume only committed statistics; capture evidence starts afresh."""
+        started = time.monotonic()
         try:
             state = self.history.load_resume_state()
             if state is None:
+                self.log_event('statistics_restore', outcome='absent_or_rejected',duration_ms=(time.monotonic()-started)*1000)
                 return False
             legacy = state.get('legacy', False)
             if legacy:
@@ -178,6 +345,7 @@ class App:
                 restored.update(total=state['total'], elapsed=state['elapsed'])
                 state = restored
             if not self.tracker.restore_resume_state(state):
+                self.log_event('statistics_restore', outcome='tracker_validation_rejected',context=True)
                 self.history.clear_resume_state()
                 self.status.set('恢复数据无法验证，已保留历史明细；本次重新开始采样。')
                 return False
@@ -186,17 +354,22 @@ class App:
             self.latest = None
             self.reading_valid = False
             self.last_valid_time = self.last_valid_monotonic = None
-            self.clear_rate_display()
+            self.clear_rate_display('restart_restore')
             self.start_button.configure(text='② 继续记录')
             self.status.set('已恢复累计与计时；旧版窗口需重新采样。' if legacy else
                             '已恢复累计、计时与采样进度；等待新读数，离线期间不计入。')
+            self.log_event('statistics_restore',outcome='legacy_restored' if legacy else 'restored',
+                session_id=self.history.active,history_seq=self.history.seq,
+                duration_ms=(time.monotonic()-started)*1000,after=self.diagnostic_state())
             return True
         except (OSError, sqlite3.Error) as error:
+            self.log_event('statistics_restore',outcome='storage_error',error_type=type(error).__name__,context=True)
             self.storage_failed(error)
             return False
 
-    def pause(self):
-        self.clear_rate_display()
+    def pause(self, reason='manual_pause'):
+        before = self.diagnostic_state()
+        self.clear_rate_display(reason)
         self.running = False
         self.reading_valid = False
         self.generation += 1
@@ -204,6 +377,7 @@ class App:
         self.tracker.pause()
         self.persist_time()
         self.start_button.configure(text='② 继续记录')
+        self.log_event('recording_paused',reason=reason,before=before,after=self.diagnostic_state())
 
     def toggle(self):
         if self.storage_error:
@@ -224,8 +398,9 @@ class App:
         if self.tracker.blocked:
             self.status.set('先确认升级或跳过差值，再继续。')
             return
+        before = self.diagnostic_state()
         self.tracker.previous = None
-        self.clear_rate_display()
+        self.clear_rate_display('start_recording')
         restoring = self.tracker.resume_pending
         if not restoring:
             self.tracker.reset_rates()
@@ -238,11 +413,13 @@ class App:
         self.start_button.configure(text='暂停记录')
         self.status.set('已恢复采样进度，等待新读数；离线期间不计入。' if restoring else
                         '正在初始化本地识别器并等待第一帧……')
+        self.log_event('recording_started',reason='resume_pending' if restoring else 'new_baseline',
+            before=before,after=self.diagnostic_state())
 
     def reset(self):
         if self.records and not messagebox.askyesno('新建记录', '结束本次统计并开始新记录？已有记录会保留在历史中。'):
             return
-        self.pause()
+        self.pause(reason='new_record')
         self.combat.reset()
         self.history.finish(self.tracker.elapsed)
         self.history.clear_resume_state()
@@ -253,9 +430,10 @@ class App:
         self.latest = None
         self.storage_error = None
         self.status.set('已保存上一段历史。可继续开始新记录。')
+        self.log_event('statistics_reset',reason='new_record',after=self.diagnostic_state())
 
     def select(self):
-        self.pause()
+        self.pause(reason='region_selection')
         self.root.withdraw()
         self.root.after(250, self.selection_overlay)
 
@@ -275,7 +453,7 @@ class App:
             photo = ImageTk.PhotoImage(Image.fromarray(shot))
             canvas.create_image(0, 0, image=photo, anchor='nw')
             canvas.image = photo
-            canvas.create_text(30, 30, text='拖动框选经验数字区域 · Esc 取消', anchor='nw', fill='#2563eb', font=('Microsoft YaHei UI', 20, 'bold'))
+            canvas.create_text(30, 30, text='拖动框选经验数字区域 · Esc 取消', anchor='nw', fill=ACCENT, font=('Microsoft YaHei UI', 20, 'bold'))
             state = {}
             def finish():
                 overlay.destroy()
@@ -284,7 +462,7 @@ class App:
                 state['origin'] = (event.x, event.y)
                 if 'box' in state:
                     canvas.delete(state['box'])
-                state['box'] = canvas.create_rectangle(event.x, event.y, event.x, event.y, outline='#2563eb', width=2)
+                state['box'] = canvas.create_rectangle(event.x, event.y, event.x, event.y, outline=ACCENT, width=2)
             def move(event):
                 if 'origin' in state:
                     canvas.coords(state['box'], *state['origin'], event.x, event.y)
@@ -314,11 +492,25 @@ class App:
         frame = level_frame = None
         info = {'source': 'screen' if region.get('game_window') else 'manual'}
         stage = 'engine_init'
+        trace = None
+        journal = getattr(self,'analysis_journal',None)
+        if journal is not None:
+            try:
+                trace = dict(sample_id=journal.next_sample_id(),generation=generation,
+                             worker_started_at=time.monotonic(),stage=stage,anchor=self.diagnostic_anchor())
+                self._diagnostic_worker = dict(trace)
+            except Exception:
+                pass
+        timings = {}
+        stage_started = time.perf_counter()
         try:
             if self.engine is None:
                 self.engine = ExperienceOCR()
+            timings['engine_init'] = round((time.perf_counter()-stage_started)*1000,3)
             stage = 'capture'
-            started = time.perf_counter()
+            if trace is not None:
+                self._diagnostic_worker = dict(trace,stage=stage)
+            started = stage_started = time.perf_counter()
             if region.get('game_window'):
                 if self.capture is None:
                     self.capture = GameCapture()
@@ -331,9 +523,12 @@ class App:
                     observed_at = time.monotonic()
                     frame = np.asarray(shot)[:, :, :3].copy()
                 info = {'source':'manual','roi':region,'observed_at':observed_at}
-            timings = info['timing_ms'] = {'capture': round((time.perf_counter()-started)*1000, 3)}
+            timings['capture'] = round((time.perf_counter()-started)*1000, 3)
+            info['timing_ms'] = timings
             stage = 'experience_ocr'
-            started = time.perf_counter()
+            if trace is not None:
+                self._diagnostic_worker = dict(trace,stage=stage)
+            started = stage_started = time.perf_counter()
             reading,details = self.engine.read(frame)
             timings['experience_ocr'] = round((time.perf_counter()-started)*1000, 3)
             diagnostics = getattr(self.engine, 'last_diagnostics', None)
@@ -342,31 +537,63 @@ class App:
             # Level is optional evidence. A local badge failure must not discard
             # a valid EXP frame or replace its capture timestamp with OCR time.
             if region.get('game_window'):
+                if trace is not None:
+                    self._diagnostic_worker = dict(trace,stage='level_ocr')
                 started = time.perf_counter()
                 level, level_details = None, []
                 try:
                     level, level_details = read_level(level_frame, self.engine)
                 except Exception as error:
                     info['level_error'] = f'{type(error).__name__}: {error}'[:1000]
+                    info['level_error_type'] = type(error).__name__
                 info.update(level_candidate=level, level_ocr=level_details,
                             level_confidence_kind='character_mean')
                 timings['level_ocr'] = round((time.perf_counter()-started)*1000, 3)
             raw = str(reading.current) + (f' [{reading.percent:.2f}%]' if reading.percent is not None else '') if reading and reading.current is not None else ' / '.join(r[0] for r in details)
             info['ocr'] = details
             if reading is None:
+                if trace is not None:
+                    info['sample_id'] = trace['sample_id']
                 self.diagnose_failure('experience_rejected', info, generation, frame, level_frame)
             # A valid EXP result must not wait for optional diagnostic disk I/O.
             # Badge errors remain visible in this result's status metadata.
-            self.events.put((generation, frame, raw, reading, None,info))
+            self.queue_worker_result(generation, frame, raw, reading, None, info, trace)
         except Exception as error:
+            timings.setdefault(stage,round((time.perf_counter()-stage_started)*1000,3))
             stage = getattr(error, 'stage', stage)
             context = getattr(error, 'context', None)
             if isinstance(context, dict):
                 info.update(context)
             info['failure_stage'] = stage
+            info['error_type'] = type(error).__name__
+            info['timing_ms'] = timings
             info['error'] = f'{type(error).__name__}: {error}'[:1000]
+            if trace is not None:
+                info['sample_id'] = trace['sample_id']
             self.diagnose_failure(stage, info, generation, frame, level_frame)
-            self.events.put((generation, frame, '', None, str(error),info))
+            self.queue_worker_result(generation, frame, '', None, str(error), info, trace)
+
+    def queue_worker_result(self, generation, frame, raw, reading, error, info, trace):
+        if trace is not None:
+            trace = dict(trace,stage='queued',enqueued_at=time.monotonic())
+            info['analysis'] = trace
+            info.setdefault('timing_ms',{})['worker'] = (trace['enqueued_at']-trace['worker_started_at'])*1000
+            self._diagnostic_worker = dict(trace)
+        self.events.put((generation, frame, raw, reading, error, info))
+        if trace is not None:
+            outcome='exception' if error else 'candidate' if reading else 'rejected'
+            recognition=info.get('recognition') or {}
+            signature=(outcome,info.get('failure_stage'),info.get('error_type'),recognition.get('reason'),info.get('level_error_type'))
+            previous=getattr(self,'_diagnostic_worker_outcome',None)
+            self._diagnostic_worker_outcome=signature
+            if trace.get('anchor') or signature!=previous or outcome!='candidate' or info['timing_ms']['worker']>500:
+                self.log_event('worker_completed', key=(outcome,info.get('failure_stage') or 'complete',info.get('error_type') or 'none'),
+                    interval=5 if signature==previous and not trace.get('anchor') else 0,
+                    sample_id=trace['sample_id'],generation=generation,source=info.get('source'),anchor=trace.get('anchor',False),
+                    observed_at=info.get('observed_at'),worker_started_at=trace['worker_started_at'],
+                    enqueued_at=trace['enqueued_at'],timing_ms=info.get('timing_ms'),
+                    outcome=outcome,ocr_reason=recognition.get('reason'),level_reason=info.get('level_error_type'),
+                    failure_stage=info.get('failure_stage'),error_type=info.get('error_type'))
 
     def diagnose_failure(self, stage, info, generation, frame=None, level_frame=None):
         """Best-effort, bounded local evidence; never a prerequisite for accounting."""
@@ -375,8 +602,12 @@ class App:
         try:
             journal = getattr(self, 'recognition_journal', None)
             if journal is None:
-                journal = self.recognition_journal = RecognitionJournal(CONFIG.parent/'recognition-failures')
-            path = journal.record(stage, {'generation': generation, 'capture': info},
+                journal = self.recognition_journal = AsyncRecognitionJournal(CONFIG.parent/'recognition-failures',
+                    on_result=lambda result:self.log_event('recognition_evidence',
+                        sample_id=result.get('sample_id'),stage=result.get('stage'),slot=result.get('slot_file'),
+                        error_type=result.get('error_type'),result=result.get('result')))
+            path = journal.record(stage, {'generation': generation, 'sample_id':info.get('sample_id'),
+                                  'run_id':getattr(getattr(self,'analysis_journal',None),'run_id',None),'capture': info},
                                   frame=frame, level_frame=level_frame)
             if path is not None:
                 info['diagnostic_file'] = str(path)
@@ -413,41 +644,50 @@ class App:
     def primary_rate_snapshot(self):
         return self.rate_snapshot()['primary']
 
-    def clear_rate_display(self):
+    def clear_rate_display(self, reason='unspecified'):
+        self.log_event('display_cache_cleared',reason=reason,generation=self.generation,
+            before=self.diagnostic_state())
         self._confirmed_rate_display = None
         self._rate_retry = False
 
     def display_rate_snapshot(self):
-        """A bounded last-observation display, never an accepted accounting sample.
+        """A session-scoped last-observation display, never an accounting sample.
 
         Its capture time and coverage never advance on failures or UI refresh.
         """
         current = self.rate_snapshot()
+        saved = getattr(self, '_confirmed_rate_display', None)
         current.update(display_state='live' if current['primary']['value'] is not None else 'unavailable',
-                       display_age_seconds=None)
-        if current['primary']['value'] is not None:
+                       display_age_seconds=None,
+                       cache_reason='live' if self.fresh_reading() else 'no_confirmed_cache',
+                       display_observation_id=saved['snapshot'].get('display_observation_id') if saved else None,
+                       current_exp=self.tracker.previous if self.fresh_reading() else None,
+                       current_percent=self.latest.percent if self.fresh_reading() and self.latest else None)
+        if self.fresh_reading():
             return current
         if self.tracker.resume_pending and not self.storage_error:
             restored = self.tracker.resume_rate_snapshot()
             result = restored if restored is not None else current
             interrupted=self.tracker.visibility_interrupted
             result.update(display_state='visibility_paused' if interrupted else 'restored',
-                          display_age_seconds=None)
+                          display_age_seconds=None,cache_reason='resume_snapshot')
             if interrupted:
                 result['visibility_preserved']=restored is not None
             return result
-        saved = getattr(self, '_confirmed_rate_display', None)
-        if (not getattr(self, '_rate_retry', False) or not saved or not self.running
-                or self.tracker.blocked or self.auto_level.wait_since is not None
-                or saved['generation'] != self.generation
-                or saved['segment'] != self.tracker.live.segment):
-            return current
+        for rejected,reason in ((not self.running,'not_running'),(self.tracker.blocked,'blocked'),
+                                (not saved,'no_confirmed_cache'),
+                                (bool(saved and saved['generation']!=self.generation),'generation_changed'),
+                                (bool(saved and saved['segment']!=self.tracker.live.segment),'segment_changed')):
+            if rejected:
+                current['cache_reason']=reason
+                return current
         age = self.tracker.clock() - saved['observed_at']
-        if (not math.isfinite(age) or not 0 <= age <= min(DISPLAY_RETRY_SECONDS, self.tracker.live.max_gap)
-                or saved['snapshot']['primary']['value'] is None):
+        if not math.isfinite(age) or age < 0:
+            current['cache_reason']='invalid_age'
             return current
         result = deepcopy(saved['snapshot'])
-        result.update(display_state='retrying', display_age_seconds=age)
+        result.update(display_state='retrying' if age <= DISPLAY_RETRY_SECONDS else 'held',
+                      display_age_seconds=age,cache_reason='held_cache')
         return result
 
     def record(self, status, delta=0):
@@ -459,6 +699,13 @@ class App:
             row[-1]+=' | '+json.dumps(self.auto_level.last_event,ensure_ascii=False)
         self.records.append(row)
         self.record_seqs.append(None)
+        started = time.monotonic()
+        sample_id = getattr(self,'_diagnostic_sample_id',None)
+        anchor=getattr(self,'_diagnostic_current_trace',{}).get('anchor',False)
+        trace_record=status!='ok' or anchor or getattr(self,'_diagnostic_force_current',False)
+        if trace_record:
+            self.log_event('history_attempt',sample_id=sample_id,anchor=anchor,
+                outcome=status,delta=delta,total=self.tracker.total,attempted=True,persisted=False)
         try:
             monitor=self.capture_info.get('monitor',{})
             rate = self.rate_snapshot()
@@ -466,40 +713,63 @@ class App:
                                 str(monitor.get('index','')),rate_metadata=rate,
                                 resume_state=self.tracker.export_resume_state())
             self.record_seqs[-1] = self.history.seq
+            if trace_record:
+                self.log_event('history_committed',sample_id=sample_id,outcome=status,anchor=anchor,
+                    session_id=self.history.active,history_seq=self.history.seq,
+                    delta=delta,total=self.tracker.total,persisted=True,duration_ms=(time.monotonic()-started)*1000)
+            if time.monotonic()-started>.25:
+                self.log_event('history_slow',sample_id=sample_id,duration_ms=(time.monotonic()-started)*1000,context=True)
             if self.fresh_reading():
+                rate.update(current_exp=self.tracker.previous,
+                            current_percent=self.latest.percent if self.latest else None,
+                            display_observation_id=sample_id)
                 self._confirmed_rate_display = dict(generation=self.generation,
                     segment=self.tracker.live.segment, observed_at=self.last_valid_monotonic,
                     snapshot=deepcopy(rate))
             return True
         except (OSError,sqlite3.Error,ValueError) as error:
+            self.log_event('history_commit_failed',sample_id=sample_id,outcome=status,persisted=False,
+                attempted=True,delta=delta,total=self.tracker.total,error_type=type(error).__name__,
+                duration_ms=(time.monotonic()-started)*1000,context=True)
             self.storage_failed(error)
             return False
 
     def storage_failed(self,error):
-        self.clear_rate_display()
+        before = self.diagnostic_state()
+        self.clear_rate_display('storage_error')
         self.storage_error=str(error)
         self.running=False
         self.generation+=1
         self.tracker.pause()
         self.start_button.configure(text='历史保存失败')
         self.status.set('历史保存失败，已暂停：'+str(error))
+        self.log_event('storage_failure',error_type=type(error).__name__,before=before,
+            after=self.diagnostic_state(),context=True)
 
     def persist_time(self):
         if self.storage_error:
             return
+        started = time.monotonic()
         try:
             # Persist committed observations even during an extended OCR outage.
             # Display freshness never revokes ownership of these samples.
             retrying = self.display_rate_snapshot()['display_state'] == 'retrying'
             state = self.tracker.export_resume_state(allow_invalid=retrying)
             self.history.save_resume_state(state, state['elapsed'])
+            duration = (time.monotonic()-started)*1000
+            if duration>250:
+                self.log_event('checkpoint_slow',duration_ms=duration,context=True)
         except (OSError,sqlite3.Error,ValueError) as error:
+            self.log_event('checkpoint_failed',duration_ms=(time.monotonic()-started)*1000,
+                error_type=type(error).__name__,context=True)
             self.storage_failed(error)
 
     def rebase(self):
         if self.storage_error or self.latest is None:
             return
-        self.clear_rate_display()
+        self._diagnostic_sample_id = None
+        before = self.diagnostic_state()
+        self.clear_rate_display('manual_rebase')
         try:
             status, _ = self.tracker.feed(self.latest, self.cap(), rebase=True)
         except ValueError:
@@ -511,6 +781,7 @@ class App:
         self.record('manual_rebase')
         self.auto_level.reset()
         self.status.set('已跳过差值。点击继续记录。')
+        self.log_event('manual_rebase',before=before,after=self.diagnostic_state())
 
     def level(self):
         if self.storage_error:
@@ -518,21 +789,53 @@ class App:
         if not self.tracker.blocked or self.latest is None:
             self.status.set('仅在检测到经验下降后使用升级确认。')
             return
-        self.clear_rate_display()
+        self._diagnostic_sample_id = None
+        before = self.diagnostic_state()
+        self.clear_rate_display('manual_level_confirmation')
         old_total = self.tracker.total
         if self.tracker.confirm_level(self.latest):
             self.manual.set('')
             self.record('confirmed_level', self.tracker.total-old_total)
             self.status.set('已计入跨一级经验。旧等级升级经验已清空；下一次升级前请更新。点击继续记录。')
+            self.log_event('manual_level_confirmation',outcome='confirmed',before=before,after=self.diagnostic_state())
         else:
             self.status.set('缺少上一级升级经验或当前绝对经验，无法精确补算；请跳过差值。')
+            self.log_event('manual_level_confirmation',outcome='insufficient_evidence',before=before,after=self.diagnostic_state())
 
     def tick(self):
+        started = time.monotonic()
+        due = getattr(self,'_diagnostic_tick_due',None)
+        if due is not None and started-due>.5:
+            self.log_event('tick_late',duration_ms=(started-due)*1000,
+                busy=self.busy,queue_depth=self.events.qsize(),context=True)
+        try:
+            self._tick()
+        except Exception as error:
+            self.log_event('tick_exception',error_type=type(error).__name__,
+                duration_ms=(time.monotonic()-started)*1000,context=True)
+            raise
+        finally:
+            elapsed = time.monotonic()-started
+            if elapsed>.5:
+                self.log_event('tick_slow',duration_ms=elapsed*1000,context=True)
+            self._diagnostic_tick_due = time.monotonic()+.25
+
+    def _tick(self):
         try:
             while True:
                 generation, frame, raw, reading, error,info = self.events.get_nowait()
+                before = self.diagnostic_state()
+                trace = dict(info.get('analysis',{}))
+                if 'anchor' not in trace:
+                    trace['anchor']=self.diagnostic_anchor()
+                trace.update(consumed_at=time.monotonic(),generation=generation,
+                             previous_observed_at=self.tracker.live.last_observed_at)
+                info['analysis'] = trace
+                self._diagnostic_sample_id = trace.get('sample_id')
+                self._diagnostic_current_trace = trace
                 self.busy = False
                 if generation != self.generation:
+                    self.diagnostic_result('generation_discard',info,before)
                     continue
                 was_valid = self.reading_valid
                 was_retry = getattr(self, '_rate_retry', False)
@@ -552,26 +855,27 @@ class App:
                         if self.tracker.suspend_visibility():
                             self.auto_level.reset()
                             self.latest = None
-                            self.clear_rate_display()
+                            self.clear_rate_display('visibility_suspended')
                             self.persist_time()
                             if self.storage_error:
+                                self.diagnostic_result('visibility_checkpoint_failed',info,before)
                                 continue
+                        self.diagnostic_result('visibility_suspended',info,before)
                         self.status.set('切屏暂停 · 等待游戏经验栏恢复可见，采样进度已保留。')
                         continue
                     self.tracker.note_visibility_recovery(info.get('observed_at'))
                     self.tracker.live.invalidate()
-                    if info.get('failure_stage') == 'experience_ocr':
-                        self._rate_retry = True
-                    else:
-                        self.clear_rate_display()
+                    self._rate_retry = True
                     self.status.set('识别失败：' + error)
+                    self.diagnostic_result('worker_exception',info,before)
                     continue
                 observed_at = info.get('observed_at',self.tracker.clock())
                 if (not isinstance(observed_at,(int,float)) or not math.isfinite(observed_at)
                         or not 0 <= self.tracker.clock()-observed_at <= self.tracker.live.max_gap):
                     self.tracker.live.invalidate()
-                    self.clear_rate_display()
+                    self._rate_retry = True
                     self.status.set('采样画面已过期，等待新的有效读数。')
+                    self.diagnostic_result('expired_frame',info,before)
                     continue
                 self.tracker.note_visibility_recovery(observed_at)
                 image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -583,7 +887,11 @@ class App:
                     self.tracker.live.invalidate()
                     self._rate_retry = True
                     self.status.set('读数未通过校验，本帧不计入；请检查框选范围和遮挡。')
+                    self.diagnostic_result('ocr_rejected',info,before)
                     continue
+                baseline_reason = ('visibility_return' if self.tracker.visibility_interrupted else
+                    'restart_resume' if self.tracker.resume_pending else
+                    'initial_or_manual_start' if self.tracker.previous is None or self.tracker._needs_baseline else None)
                 try:
                     if self.region and self.region.get('game_window'):
                         status,delta=self.auto_level.feed(reading,info.get('level_candidate'),self.cap(),observed_at=observed_at)
@@ -591,28 +899,32 @@ class App:
                         status, delta = self.tracker.feed(reading, self.cap(), observed_at=observed_at)
                 except ValueError:
                     self.tracker.live.invalidate()
-                    self.clear_rate_display()
+                    self.clear_rate_display('invalid_manual_cap')
                     self.status.set('升级所需经验请填写正整数。')
+                    self.diagnostic_result('invalid_manual_cap',info,before)
                     continue
                 if status == 'stale':
                     self.reading_valid = was_valid
                     self._rate_retry = was_retry
+                    self.diagnostic_result('timestamp_discard',info,before)
                     continue
+                self.diagnostic_result(status,info,before,delta=delta,
+                    baseline_reason=baseline_reason if status=='baseline' else None)
                 self.latest = reading
                 if status == 'need_cap':
                     self.tracker.live.invalidate()
-                    self.clear_rate_display()
+                    self.clear_rate_display('need_cap')
                     self.status.set('仅识别到百分比，请填写当前等级升级所需经验（结果为估算）。')
                 elif status == 'invalid':
                     self.tracker.live.invalidate()
-                    self.clear_rate_display()
+                    self.clear_rate_display('invalid_reading')
                     self.status.set('读数未通过校验，本帧不计入；等待新的有效读数。')
                 elif status == 'level_pending':
                     self.tracker.live.invalidate()
-                    self.clear_rate_display()
+                    self._rate_retry = True
                     self.status.set('正在多帧核验等级与经验变化，暂不计入差值……')
                 elif status in ('decrease','level_mismatch','blocked'):
-                    self.pause()
+                    self.pause(reason=status)
                     self.status.set('等级或经验变化未能自动确认，已暂停。可确认升级或以当前读数接续。')
                     self.record(status)
                 else:
@@ -645,6 +957,7 @@ class App:
             pass
         self.tracker.expire_visibility_continuation()
         rate = self.display_rate_snapshot()
+        self.diagnostic_surface('backend',rate)
         primary = rate['primary']
         values = (self.tracker.total,primary['value'],self.tracker.rates()[0])
         for index, (label, value) in enumerate(zip(self.metrics, values)):
@@ -654,6 +967,8 @@ class App:
             label.configure(text=text)
         if rate['display_state'] == 'retrying':
             self.status.set(f"识别重试中，显示 {rate['display_age_seconds']:.1f} 秒前的可信值；本帧未计入。")
+        elif rate['display_state'] == 'held':
+            self.status.set(f"等待读数，保留 {rate['display_age_seconds']:.0f} 秒前的可信值与采样进度；本帧未计入。")
         elif rate['display_state'] == 'restored':
             self.status.set('已恢复累计、计时与采样进度；等待新读数，离线期间不计入。')
         elif rate['display_state'] == 'visibility_paused':
@@ -678,6 +993,14 @@ class App:
         if self.running and not self.busy:
             self.busy = True
             threading.Thread(target=self.worker, args=(self.generation, dict(self.region)), daemon=True).start()
+        worker = getattr(self,'_diagnostic_worker',None)
+        if worker and self.busy:
+            age = time.monotonic()-worker['worker_started_at']
+            key = (worker['sample_id'],worker['stage']) if age>5 else None
+            if key is not None and key!=getattr(self,'_diagnostic_wait_key',None):
+                self.log_event('worker_wait',sample_id=worker['sample_id'],generation=worker['generation'],
+                    stage=worker['stage'],worker_age=age,queue_depth=self.events.qsize(),context=True)
+            self._diagnostic_wait_key = key
         self.root.after(250, self.tick)
 
     def write_status(self):
@@ -707,6 +1030,8 @@ class App:
                         trend_has_gaps=rate.get('has_gaps',False))
             data.update(display_state=display['display_state'],
                         display_age_seconds=display['display_age_seconds'],
+                        display_current_exp=display.get('current_exp'),
+                        display_current_percent=display.get('current_percent'),
                         display_primary_per_minute=display['primary']['value'],
                         display_window_rates=display['windows'],display_trend_per_minute=display['value'])
             data.update(level=self.tracker.level,confirmed_levels=self.tracker.confirmed_levels,level_gaps=self.tracker.level_gaps,last_level_event=self.auto_level.last_event)
@@ -714,6 +1039,7 @@ class App:
             data['combat'] = self.combat.summary()
             data['kills'] = self.combat.kill_summary()
             data['ui_animation'] = getattr(self,'ui_animation_state',{})
+            data['diagnostics'] = self.diagnostic_health()
             launch = getattr(self, 'review_launch', {})
             review_thread = getattr(self, 'startup_review_thread', None)
             data.update(app_instance_id=launch.get('instance_id'),
@@ -731,7 +1057,8 @@ class App:
             temporary.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8')
             temporary.replace(CONFIG.with_name('live-status.json'))
             return True
-        except OSError:
+        except OSError as error:
+            self.log_event('live_status_write_failed',interval=5,error_type=type(error).__name__,context=True)
             return False
 
     def export(self):

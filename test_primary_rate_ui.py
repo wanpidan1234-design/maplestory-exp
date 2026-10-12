@@ -168,7 +168,7 @@ class PrimaryRateUiTests(unittest.TestCase):
 
     def test_retry_retains_all_values_and_marks_their_original_age(self):
         view, snapshot = self.make_orb(value=125, state='ready', observed=60)
-        snapshot.update(display_state='retrying', display_age_seconds=1.3)
+        snapshot.update(display_state='retrying', display_age_seconds=1.3,current_exp=1234,current_percent=25)
         view.backend.fresh_reading = lambda: False
         view.paint_panel()
         fitted = self.fitted_values(view)
@@ -183,15 +183,28 @@ class PrimaryRateUiTests(unittest.TestCase):
                 f'fill_{seconds}',state='normal',fill=MIDNIGHT['warning'])
         self.assertEqual(self.configured_text(view.panel_canvas, 'session_state'),'识别重试')
         self.assertIn('1.3 秒前',self.configured_text(view.panel_canvas,'detail'))
-        self.assertIn('本帧识别未通过', self.configured_text(view.panel_canvas, 'detail'))
+        self.assertIn('等待读数', self.configured_text(view.panel_canvas, 'detail'))
         self.assertNotIn('速度趋势', self.configured_text(view.panel_canvas, 'detail'))
-        self.assertEqual(self.configured_text(view.panel_canvas, 'current_percent'), '待识别')
-        self.assertEqual(fitted['current_value'], '—')
+        self.assertEqual(self.configured_text(view.panel_canvas, 'current_percent'), '25.00%')
+        self.assertEqual(fitted['current_value'], '1,234')
         self.assertEqual(snapshot['primary']['observed_seconds'], 60)
         self.assertEqual(snapshot['primary']['state'], 'ready')
         self.assertEqual(self.fitted_values(view)['live_value'], '125')
         self.assertTrue(any(c.args==('live_value',) and c.kwargs.get('fill')==MIDNIGHT['warning']
                             for c in view.panel_canvas.itemconfigure.call_args_list))
+
+    def test_long_interruption_keeps_numbers_progress_and_exp_with_explicit_age(self):
+        view,snapshot=self.make_orb(value=125,state='ready',observed=60)
+        snapshot.update(display_state='held',display_age_seconds=33,current_exp=1234,current_percent=25)
+        view.backend.fresh_reading=lambda:False
+        view.paint_panel()
+        self.assertEqual(view.state(),('等待读数',WARNING))
+        self.assertEqual(self.fitted_values(view)['live_value'],'125')
+        self.assertEqual(self.fitted_values(view)['current_value'],'1,234')
+        self.assertEqual(self.configured_text(view.panel_canvas,'current_percent'),'25.00%')
+        self.assertIn('33.0 秒前',self.configured_text(view.panel_canvas,'detail'))
+        self.assertEqual(rate_window_display(snapshot,120)['ratio'],.5)
+        self.assertIn('待更新',rate_window_display(snapshot,120)['caption'])
 
     def test_retry_orb_marks_once_and_recovers_normal_color(self):
         for state in ('ready', 'warming'):

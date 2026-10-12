@@ -460,7 +460,7 @@ class MidnightPanel:
         b,c = self.orb.backend,self.canvas
         state, _ = self.orb.state(snapshot)
         rate = snapshot['primary']
-        retrying = snapshot.get('display_state')=='retrying'
+        retrying = snapshot.get('display_state') in ('retrying','held')
         restored = snapshot.get('display_state')=='restored'
         visibility_paused = snapshot.get('display_state')=='visibility_paused'
         held = retrying or restored or visibility_paused
@@ -502,9 +502,12 @@ class MidnightPanel:
             c.coords(controls['fill'],self.p(x),self.p(y),self.p(x+width*sample['ratio']),self.p(y))
             c.itemconfigure(controls['fill'],state='normal' if sample['ratio']>0 else 'hidden',fill=value_color)
             c.itemconfigure(controls['caption'],text=sample['caption'],fill=value_color if held else MIDNIGHT['muted'])
-        self.fit(self.current_value,f'{b.tracker.previous:,}' if fresh else '—',27,175)
-        pct = b.latest.percent if fresh and b.latest else None
-        self.fit(self.current_percent,f'{pct:.2f}%' if pct is not None else '待识别',13,70,MIDNIGHT['muted'],number=pct is not None)
+        current_exp = snapshot.get('current_exp',b.tracker.previous if fresh else None)
+        self.fit(self.current_value,f'{current_exp:,}' if current_exp is not None else '—',27,175,
+                 MIDNIGHT['warning'] if held else MIDNIGHT['ink'])
+        pct = snapshot.get('current_percent',b.latest.percent if fresh and b.latest else None)
+        self.fit(self.current_percent,f'{pct:.2f}%' if pct is not None else '待识别',13,70,
+                 MIDNIGHT['warning'] if held else MIDNIGHT['muted'],number=pct is not None)
         level = getattr(b.tracker,'level',None)
         self.fit(self.level,f'Lv.{level}' if level is not None else 'Lv.—',12,36)
         x,y,width = self.exp_box
@@ -522,7 +525,8 @@ class MidnightPanel:
         elif not b.running:
             note='已暂停 · 历史记录已保存'
         elif retrying:
-            note=f"本帧识别未通过，正在重试 · 暂显 {snapshot['display_age_seconds']:.1f} 秒前有效分均"
+            action='核验等级变化' if getattr(getattr(b,'auto_level',None),'wait_since',None) is not None else '等待读数'
+            note=f"{action} · 保留 {snapshot['display_age_seconds']:.1f} 秒前数值与采样进度"
         elif not fresh:
             note='未找到游戏窗口 · 打开游戏后将自动识别' if '未找到' in b.status.get() else '等待有效读数 · 请保持游戏经验栏可见'
             if getattr(getattr(b,'auto_level',None),'wait_since',None) is not None:
