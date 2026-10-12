@@ -13,6 +13,14 @@ Windows 冒险岛经验统计悬浮工具。通过屏幕截图和 OCR 读取经�
 
 ## 运行
 
+### Windows 独立版（无需安装 Python）
+
+从 [GitHub Releases](https://github.com/wanpidan1234-design/maplestory-exp/releases) 下载 `MapleExpTracker-1.0.0-windows-x64.zip`，完整解压后双击 `MapleExpTracker.exe`。请保留同目录的 `_internal` 文件夹，不要直接在压缩包内运行。适用于 Windows 10/11 x64；已内置 Python、OCR 模型及界面动画，启动不需要下载依赖。
+
+独立版将历史保存到 `%LOCALAPPDATA%\MapleExpTracker\data\history.sqlite3`，配置和诊断仍位于 `%LOCALAPPDATA%\MapleExpTracker`；升级时替换程序目录即可保留数据。`MAPLE_EXP_DATA_DIR` 可覆盖历史目录。独立版关闭自动开发评审，不需要 Codex。发行包附有 `SHA256SUMS.txt` 校验文件及第三方许可，当前未做代码签名。
+
+### 从源码运行
+
 需要 Windows 10/11 和 Python 3.10+（带 Tkinter）。开发环境验证使用 Python 3.13。首次安装需要网络下载依赖。
 
 ```powershell
@@ -59,3 +67,9 @@ python -m venv .venv
 ```
 
 公开测试覆盖统计、接续、SQLite 历史、图表、原生界面与评审基础设施。少量可选图片测试会在资源不存在时跳过；私人截图语料与依赖这些语料的专用测试不随仓库发布。原生界面测试需要可用的 Windows 桌面。
+
+## 构建独立版
+
+在 Windows x64 的项目虚拟环境安装 `requirements-build.txt` 后，运行 `python build_release.py`。构建仅使用当前 Git 提交中的公开源码和资源，未提交的修改不会进入发行包；产物位于 `dist/`。`BUILD.json` 记录源提交与依赖版本，`THIRD_PARTY_LICENSES/` 包含随包依赖的许可。
+
+发行程序支持 `MapleExpTracker.exe --self-test-report report.json`，使用临时数据目录检查内置 OCR、资源、窗口和数据库，不采集实际游戏画面。

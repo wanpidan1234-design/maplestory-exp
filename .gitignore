@@ -4,6 +4,7 @@
 !/.gitattributes
 !/README.md
 !/requirements.txt
+!/requirements-build.txt
 !/start.cmd
 !/*.py
 !/assets/
