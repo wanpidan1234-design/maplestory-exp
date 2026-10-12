@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 import mss
 import numpy as np
+from image_assets import read_image
 
 USER = ctypes.windll.user32
 USER.FindWindowW.argtypes = [wt.LPCWSTR, wt.LPCWSTR]
@@ -64,7 +65,7 @@ def game_geometry(include_monitor=True):
 
 class GameCapture:
     def __init__(self):
-        self.anchor = cv2.imread(str(Path(__file__).parent/'assets'/'exp-anchor.png'),0)
+        self.anchor = read_image(Path(__file__).parent/'assets'/'exp-anchor.png',0)
         if self.anchor is None:
             raise CaptureFailure('缺少经验栏定位模板','anchor_template_missing',dict(source='screen'))
         self.anchor = cv2.threshold(self.anchor,175,255,cv2.THRESH_BINARY)[1]

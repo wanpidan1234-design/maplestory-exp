@@ -28,13 +28,16 @@ def self_test(report_path):
             import numpy as np
             from PIL import Image, ImageDraw, ImageFont
             from experience_ocr import ExperienceOCR
+            from image_assets import read_image
+            from game_capture import GameCapture
             from app import App
             from orb import Orb
             from monster_portraits import name_ids
 
             base = Path(__file__).parent
             for name in ('exp-anchor.png', 'level-anchor.png', 'monster-level-prefix.png'):
-                assert cv2.imread(str(base / 'assets' / name)) is not None, name
+                assert read_image(base / 'assets' / name) is not None, name
+            assert GameCapture().anchor is not None
             with Image.open(base / 'assets/levelup-d-dynamic/orb-000.png') as image:
                 image.load()
             assert name_ids(), 'Missing monster catalog'

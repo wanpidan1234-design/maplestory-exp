@@ -4,6 +4,7 @@ from pathlib import Path
 import json,re,math,queue,threading,time
 import cv2
 import numpy as np
+from image_assets import read_image
 from experience_ocr import ExperienceOCR
 from game_capture import GameCapture,game_geometry,USER,wt
 
@@ -13,7 +14,7 @@ UNKNOWN='未识别怪物'
 class MonsterVision:
     def __init__(self):
         assets=Path(__file__).parent/'assets'
-        self.prefix=cv2.imread(str(assets/'monster-level-prefix.png'),0)
+        self.prefix=read_image(assets/'monster-level-prefix.png',0)
         catalog=json.loads((assets/'monster-catalog.json').read_text(encoding='utf-8'))
         self.names=sorted({r['name'] for r in catalog['monsters'] if r['name'] and len(r['name'])>=2},key=len,reverse=True)
         self.name_set=set(self.names)

@@ -65,7 +65,9 @@ def build(output):
                 continue
             packages[name] = distribution.version
             for item in distribution.files or []:
-                if any(part.lower().startswith(('license', 'copying', 'notice')) for part in item.parts):
+                is_notice = item.name.lower().startswith(('license', 'copying', 'notice'))
+                in_metadata = any(part.endswith('.dist-info') for part in item.parts)
+                if (is_notice or (in_metadata and 'licenses' in item.parts)) and item.suffix.lower() not in {'.py', '.pyc', '.pyo'}:
                     original = Path(distribution.locate_file(item))
                     if original.is_file():
                         target = licenses / name / str(item).replace('/', '__').replace('\\', '__')
@@ -82,7 +84,8 @@ def build(output):
             for path in sorted(app.rglob('*')):
                 if path.is_file():
                     bundle.write(path, path.relative_to(app.parent))
-        digest = hashlib.file_digest(destination.open('rb'), 'sha256').hexdigest()
+        with destination.open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         (output / 'SHA256SUMS.txt').write_text(f'{digest}  {destination.name}\n', encoding='utf-8')
         print(json.dumps({'file': str(destination), 'sha256': digest, 'bytes': destination.stat().st_size}))
 

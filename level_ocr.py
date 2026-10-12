@@ -3,6 +3,7 @@ from pathlib import Path
 import re
 import cv2
 import numpy as np
+from image_assets import read_image
 
 
 def character_confidence(text,score):
@@ -15,7 +16,7 @@ def character_confidence(text,score):
 
 
 def crop_level(band,scale):
-    original=cv2.imread(str(Path(__file__).parent/'assets'/'level-anchor.png'),0)
+    original=read_image(Path(__file__).parent/'assets'/'level-anchor.png',0)
     template=cv2.resize(original,None,fx=scale,fy=scale,interpolation=cv2.INTER_NEAREST)
     gray=cv2.cvtColor(band[:,:min(band.shape[1],round(320*scale))],cv2.COLOR_BGR2GRAY)
     gray=cv2.threshold(gray,180,255,cv2.THRESH_BINARY)[1]
