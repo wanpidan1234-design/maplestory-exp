@@ -2,6 +2,8 @@
 
 Windows 冒险岛经验统计悬浮工具。通过屏幕截图和 OCR 读取经验，使用 Python / Tkinter 绘制悬浮球、统计面板与历史图表。仅观察屏幕，不读取游戏内存、不注入进程、不控制游戏操作。
 
+**直接使用：** [下载 Windows x64 独立版 1.0.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.0.0/MapleExpTracker-1.0.0-windows-x64.zip)（约 333 MB，无需安装 Python） · [版本说明](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.0.0)
+
 ## 功能
 
 - 可拖动、可调透明度的悬浮球与夜航统计面板。
@@ -15,9 +17,82 @@ Windows 冒险岛经验统计悬浮工具。通过屏幕截图和 OCR 读取经�
 
 ### Windows 独立版（无需安装 Python）
 
-从 [GitHub Releases](https://github.com/wanpidan1234-design/maplestory-exp/releases) 下载 `MapleExpTracker-1.0.0-windows-x64.zip`，完整解压后双击 `MapleExpTracker.exe`。请保留同目录的 `_internal` 文件夹，不要直接在压缩包内运行。适用于 Windows 10/11 x64；已内置 Python、OCR 模型及界面动画，启动不需要下载依赖。
+适用于 **Windows 10/11 x64**。已内置 Python、OCR 模型及界面动画，启动不需要下载依赖，也不需要安装 Codex。
 
-独立版将历史保存到 `%LOCALAPPDATA%\MapleExpTracker\data\history.sqlite3`，配置和诊断仍位于 `%LOCALAPPDATA%\MapleExpTracker`；升级时替换程序目录即可保留数据。`MAPLE_EXP_DATA_DIR` 可覆盖历史目录。独立版关闭自动开发评审，不需要 Codex。发行包附有 `SHA256SUMS.txt` 校验文件及第三方许可，当前未做代码签名。
+1. 下载上方独立版 ZIP，或打开 [Release 1.0.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.0.0)，在 **Assets** 中选择 `MapleExpTracker-1.0.0-windows-x64.zip`。GitHub 自动提供的 `Source code` 是源码包，不含可直接启动的程序。
+2. 右键压缩包，选择“全部解压”，放到自己方便找到的文件夹。支持中文和空格路径，请勿直接在压缩包内运行。
+3. 打开解压后的 `MapleExpTracker` 文件夹，双击 `MapleExpTracker.exe`。保留旁边的 `_internal` 文件夹，不能只复制 EXE。
+4. 进入游戏并让经验栏保持可见。程序会尝试自动定位游戏；点击悬浮球可展开统计面板，拖动悬浮球可调整位置。
+5. 等待首个可信读数建立基线。后续经验变化开始计入统计；“采样中”表示观察窗口还未填满，并非程序故障。
+
+解压后的主要文件如下：
+
+```text
+MapleExpTracker/
+├─ MapleExpTracker.exe       # 双击启动
+├─ _internal/               # 必须保留的运行库、OCR 模型和界面资源
+├─ README.md
+├─ BUILD.json               # 源码提交和依赖版本
+└─ THIRD_PARTY_LICENSES/    # 第三方许可
+```
+
+### 日常操作与识别设置
+
+**右键悬浮球**可打开操作菜单：
+
+| 操作 | 菜单或使用方法 |
+| --- | --- |
+| 查看主统计 | 点击悬浮球，或选择“展开 / 收起统计” |
+| 暂停或继续 | “暂停 / 继续”；手动暂停会清空当前分均采样 |
+| 自动定位失败 | 确认游戏窗口可见，选择“重新定位游戏” |
+| 手动选择识别区域 | “框选经验栏…”；选取完整经验数字区域，避免混入聊天和其他文字 |
+| 调整识别参数 | “识别设置…” |
+| 查看已保存记录 | “历史回看 / 每日总计” |
+| 对比各时间窗口 | “多尺度分均” |
+| 查看战斗统计 | “战斗伤害 / 血蓝消耗”（实验性功能） |
+| 导出或退出 | “导出本次记录”导出 CSV；“退出”正常保存并关闭 |
+
+游戏经验栏被遮挡、游戏最小化或切屏时，可能显示“等待读数”或“切屏暂停”。恢复可见后等待新的可信读数，不需要反复重置。界面显示“核验变化”或要求处理经验下降时，先核对实际升级情况，再通过识别设置中的确认操作处理。
+
+### 保存数据、升级与校验
+
+独立版的数据保存在程序目录之外：
+
+| 内容 | 默认位置 |
+| --- | --- |
+| 历史数据库 | `%LOCALAPPDATA%\MapleExpTracker\data\history.sqlite3` |
+| 识别设置和悬浮球配置 | `%LOCALAPPDATA%\MapleExpTracker` |
+| 本地诊断日志 | `%LOCALAPPDATA%\MapleExpTracker\analysis-logs` |
+
+可将 `%LOCALAPPDATA%\MapleExpTracker` 粘贴到资源管理器地址栏打开。升级前先从悬浮球菜单正常退出，备份该目录，再将新版解压到新文件夹启动；保留用户数据目录即可保留历史。若设置过 `MAPLE_EXP_DATA_DIR`，历史会写入指定目录，备份时也要包含它。源码版默认使用项目内 `data/history.sqlite3`，切换到独立版时不会自动搬迁该数据库。
+
+校验下载时，另行下载 Release 附件 [SHA256SUMS.txt](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.0.0/SHA256SUMS.txt)，与 ZIP 放在同一个文件夹。打开该文件夹中的 PowerShell，运行：
+
+```powershell
+Get-FileHash .\MapleExpTracker-1.0.0-windows-x64.zip -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
+```
+
+两处的 SHA-256 应完全相同（字母大小写可忽略）。当前 1.0.0 未做代码签名；若 Windows 提示无法验证发布者，可先核对本仓库的下载来源和校验值。
+
+### 常见问题
+
+| 现象 | 处理方法 |
+| --- | --- |
+| 找不到 EXE | 检查是否误下载了 `Source code`，应下载名称含 `windows-x64` 的 ZIP |
+| 启动提示缺少 DLL、模型或资源 | 重新完整解压，确认 `_internal` 与 EXE 位于同一目录 |
+| 再次双击没有新窗口 | 程序使用单实例，请先查看已经运行的悬浮球 |
+| 未找到游戏或长期没有读数 | 保持经验栏完整可见；尝试“重新定位游戏”或手动框选。游戏版本、字体、分辨率和遮挡都可能影响识别 |
+| 战斗面板没有怪物原画 | 发行包不包含怪物原画包，使用中性占位图属于预期行为 |
+
+需要检查安装包是否完整可运行时，可在解压目录的 PowerShell 中执行：
+
+```powershell
+Start-Process .\MapleExpTracker.exe -ArgumentList '--self-test-report self-test.json' -Wait
+Get-Content .\self-test.json
+```
+
+结果中的 `status` 为 `passed` 表示自检通过。自检会短暂打开测试窗口，使用临时数据目录，不采集实际游戏画面，也不修改已有历史。独立版始终关闭自动开发评审。
 
 ### 从源码运行
 
@@ -49,7 +124,7 @@ python -m venv .venv
 
 ## 数据与资源
 
-- 历史记录默认保存在 `data/history.sqlite3`，可用 `MAPLE_EXP_DATA_DIR` 指定数据目录。
+- 源码版历史默认保存在项目内 `data/history.sqlite3`；独立版默认保存在 `%LOCALAPPDATA%\MapleExpTracker\data\history.sqlite3`。两者均可用 `MAPLE_EXP_DATA_DIR` 指定数据目录。
 - 用户配置、实时状态与识别诊断保存在 `%LOCALAPPDATA%\MapleExpTracker`。
 - 有界、异步的[本地分析日志](docs/diagnostics.md)记录采样中断、拒绝原因、入库结果、显示变化和恢复过程；日志故障不阻塞计账。
 - 仓库不包含玩家历史、识别截图、运行日志、本机配置、凭据及私人评审记录。
