@@ -44,11 +44,18 @@ def build(output):
     StringStruct('OriginalFilename', 'MapleExpTracker.exe')])]),
     VarFileInfo([VarStruct('Translation', [1033,1200])])])
 """, encoding='utf-8')
+        # RapidOCR 1.2.3 loads these top-level modules by name from config.yaml.
+        # Static import analysis and collecting model data alone cannot find them.
+        ocr_path = importlib.metadata.distribution('rapidocr-onnxruntime').locate_file('rapidocr_onnxruntime')
         command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean',
                    '--onedir', '--windowed', '--name', 'MapleExpTracker',
                    '--distpath', str(workspace / 'bundle'),
                    '--workpath', str(workspace / 'work'), '--specpath', str(workspace),
                    '--paths', str(source), '--hidden-import', 'orb',
+                   '--paths', str(ocr_path),
+                   '--collect-submodules', 'ch_ppocr_v3_rec',
+                   '--collect-submodules', 'ch_ppocr_v3_det',
+                   '--collect-submodules', 'ch_ppocr_v2_cls',
                    '--collect-data', 'rapidocr_onnxruntime',
                    '--collect-binaries', 'onnxruntime', '--collect-submodules', 'dxcam',
                    '--add-data', f'{source / "assets"}:assets',
