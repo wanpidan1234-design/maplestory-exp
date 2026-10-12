@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import importlib.metadata
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -53,15 +54,25 @@ def build(output):
                    '--workpath', str(workspace / 'work'), '--specpath', str(workspace),
                    '--paths', str(source), '--hidden-import', 'orb',
                    '--paths', str(ocr_path),
-                   '--collect-submodules', 'ch_ppocr_v3_rec',
-                   '--collect-submodules', 'ch_ppocr_v3_det',
-                   '--collect-submodules', 'ch_ppocr_v2_cls',
+                   '--hidden-import', 'ch_ppocr_v3_rec',
+                   '--hidden-import', 'ch_ppocr_v3_det',
+                   '--hidden-import', 'ch_ppocr_v2_cls',
                    '--collect-data', 'rapidocr_onnxruntime',
                    '--collect-binaries', 'onnxruntime', '--collect-submodules', 'dxcam',
                    '--add-data', f'{source / "assets"}:assets',
                    '--version-file', str(version_file), str(source / 'release_entry.py')]
         subprocess.run(command, cwd=source, check=True)
         app = workspace / 'bundle' / 'MapleExpTracker'
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.upper().startswith(('PYTHON', 'CONDA', 'VIRTUAL_ENV', 'MAPLE_EXP_'))}
+        environment['PATH'] = str(Path(environment['WINDIR']) / 'System32')
+        smoke_report = workspace / 'self-test.json'
+        smoke = subprocess.run([str(app / 'MapleExpTracker.exe'), '--self-test-report', str(smoke_report)],
+                               cwd=workspace, env=environment, timeout=60,
+                               creationflags=subprocess.CREATE_NO_WINDOW)
+        result = json.loads(smoke_report.read_text(encoding='utf-8'))
+        if smoke.returncode or result.get('status') != 'passed' or not result.get('frozen'):
+            raise RuntimeError(f'Frozen runtime self-test failed: {result}')
         shutil.copyfile(source / 'README.md', app / 'README.md')
         licenses = app / 'THIRD_PARTY_LICENSES'
         licenses.mkdir()
