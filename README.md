@@ -1,6 +1,10 @@
-# MapleStory EXP Tracker
+# 冒险岛经验统计 / MapleStory EXP Tracker
 
 Windows 冒险岛经验统计悬浮工具。通过屏幕截图和 OCR 读取经验，使用 Python / Tkinter 绘制悬浮球、统计面板与历史图表。仅观察屏幕，不读取游戏内存、不注入进程、不控制游戏操作。
+
+用于冒险岛怀旧服的经验监控与练级效率统计：查看每分钟经验（EXP/min）、每小时经验（EXP/hour）、升级进度和历史收益，比较不同时间段的打怪效率。冒险岛也常以枫之谷／楓之谷、MapleStory 等名称检索。
+
+A Windows **MapleStory EXP / XP tracker** with an **OCR game overlay** for experience monitoring, EXP per minute, EXP per hour, leveling efficiency, level-up progress and local session history. Includes a floating desktop widget and a standalone Windows release; reads visible screen pixels only.
 
 **直接使用：** [下载 Windows x64 独立版 1.0.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.0.0/MapleExpTracker-1.0.0-windows-x64.zip)（约 333 MB，无需安装 Python） · [版本说明](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.0.0)
 
@@ -148,3 +152,9 @@ python -m venv .venv
 在 Windows x64 的项目虚拟环境安装 `requirements-build.txt` 后，运行 `python build_release.py`。构建仅使用当前 Git 提交中的公开源码和资源，未提交的修改不会进入发行包；产物位于 `dist/`。`BUILD.json` 记录源提交与依赖版本，`THIRD_PARTY_LICENSES/` 包含随包依赖的许可。
 
 发行程序支持 `MapleExpTracker.exe --self-test-report report.json`，使用临时数据目录检查内置 OCR、资源、窗口和数据库，不采集实际游戏画面。
+
+## 相关关键词
+
+中文：冒险岛、冒险岛怀旧服、冒險島、枫之谷、楓之谷、经验统计、经验监控、经验计数器、经验计算器、分均经验、时均经验、练级效率、打怪效率、升级进度、游戏悬浮窗、桌面悬浮球、屏幕文字识别。
+
+English: MapleStory, MapleStory Classic, EXP tracker, XP tracker, experience tracker, EXP counter, EXP calculator, EXP per minute, EXP per hour, leveling efficiency, level-up tracker, game overlay, floating widget, OCR, screen capture, Windows desktop app, Python, Tkinter, RapidOCR, ONNX Runtime, SQLite.
