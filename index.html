@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' http://127.0.0.1:17321; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>冒险岛 · 经验观察器</title>
+  <meta name="description" content="冒险岛国服怀旧服经验观察器：实时分均、历史、战斗、花 Buff、三转答题与本地知识库。">
+  <link rel="icon" href="./icon.png"><link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="#overview"><img src="./icon.png" width="42" height="42" alt=""><span>经验观察器<small>冒险岛 · 国服怀旧服</small></span></a>
+  <nav aria-label="主导航">
+    <button data-page="overview" aria-current="page">实时观察</button>
+    <button data-page="history">历史回看</button>
+    <button data-page="combat">战斗明细</button>
+    <button data-page="quiz">三转答题</button>
+    <button data-page="knowledge">攻略资料</button>
+    <button data-page="settings">识别与设置</button>
+  </nav>
+  <div class="sidebar-bottom"><span id="connection" role="status">尚未连接</span><button id="show-connect">连接本机服务</button><small>屏幕识别 · 本地记账<br>所有时间均为北京时间</small></div>
+</aside>
+<main>
+  <header class="page-header"><div><h1 id="page-title">实时观察</h1><p id="page-description">观察练级效率，保留每一段可信记录。</p></div><div class="actions"><button data-command="window" data-target="orb" class="connected">显示悬浮球</button><button id="recording" class="primary connected">开始记录</button></div></header>
+  <section id="connect-panel" class="connection-panel">
+    <div><h2>连接你的游戏电脑</h2><p>在游戏电脑上运行 <strong>start-web.cmd</strong>，会自动打开已配对的网页。截图、识别与历史留在本机。</p><p>已经启动服务？粘贴本机连接地址或连接码。浏览器询问时，允许访问本地网络。</p></div>
+    <form id="connect-form"><label for="connection-code">连接地址或连接码</label><div class="inline"><input id="connection-code" type="password" autocomplete="off" placeholder="从本机启动入口获取" required><button class="primary" type="submit">连接</button></div></form>
+    <div class="inline"><a href="https://github.com/wanpidan1234-design/maplestory-exp/blob/codex/web-companion/docs/web-companion.md" target="_blank" rel="noopener noreferrer">获取本机服务与使用说明</a><a id="local-fallback" href="http://127.0.0.1:17321/" rel="noreferrer">浏览器阻止连接？打开本机网页</a></div>
+  </section>
+  <p id="notice" class="notice" role="status" aria-live="polite" hidden></p>
+  <section class="page" id="overview">
+    <div class="status-line"><span id="capture-status">连接后显示实际采样状态</span><span id="updated">尚无读数</span></div>
+    <div class="observer">
+      <section class="efficiency"><h2>当前效率 <span id="quality" class="tag">等待连接</span></h2><div class="rate"><strong id="primary-rate">—</strong><span>EXP / 分</span></div><div class="rate-secondary"><span>每小时 <b id="hour-rate">—</b></span><span>速度趋势 <b id="trend-rate">—</b></span></div><div class="coverage"><progress id="coverage" max="60" value="0" aria-label="一分钟有效采样进度"></progress><span id="coverage-text">等待有效采样</span></div>
+        <dl class="session-strip"><div><dt>本次累计</dt><dd id="total">—</dd></div><div><dt>有效计时</dt><dd id="elapsed">—</dd></div><div><dt>全程分均</dt><dd id="average">—</dd></div><div><dt>当前等级</dt><dd id="level">—</dd></div></dl>
+      </section>
+      <section class="resources"><h2>角色与增益</h2><dl><div><dt>当前经验</dt><dd id="current-exp">—</dd></div><div><dt>升级进度</dt><dd id="percent">—</dd></div><div><dt>每分 / 每时百分比</dt><dd id="percent-rate">— / —</dd></div><div><dt>预计升级</dt><dd id="eta">—</dd></div><div><dt>HP / MP</dt><dd id="vitals">— / —</dd></div></dl><div class="flower"><span>神圣祈祷</span><strong id="flower">等待花 Buff</strong><small id="flower-detail">提醒由本机服务播放</small></div></section>
+    </div>
+    <section class="section"><div class="section-heading"><h2>多尺度分均</h2><button data-command="window" data-target="multiscale" class="connected">桌面独立窗</button></div><div id="windows" class="windows"></div></section>
+    <section class="section"><div class="section-heading"><h2>经验曲线</h2><label>观测窗口 <select id="live-window"><option value="60">1 分钟</option><option value="120">2 分钟</option><option value="300">5 分钟</option><option value="600">10 分钟</option><option value="1800">30 分钟</option><option value="0">速度趋势</option></select></label></div><div id="live-chart" class="chart" role="img" aria-label="实时经验曲线"></div><h3>每分钟收益</h3><div id="live-minutes" class="chart short" role="img" aria-label="最近每分钟经验收益"></div></section>
+    <section class="section"><div class="section-heading"><h2>今日收益</h2><span id="today-total">—</span></div><div id="today-chart" class="chart short" role="img" aria-label="今日全部记录每分钟经验收益"></div></section>
+    <div class="inline footer-actions"><button data-command="locate" class="connected">重新定位游戏</button><button data-export="current" class="connected">导出本次记录</button><button data-command="window" data-target="panel" class="connected">展开 / 收起桌面面板</button><button id="pip">网页置顶小窗</button></div>
+    <p class="muted">只观察可见游戏画面，不读取内存、不操作游戏。中断时保留可信样本，离线收益与时间不计入。</p>
+  </section>
+  <section class="page" id="history" hidden>
+    <div class="toolbar"><label>日期 <select id="history-day"><option value="">连接后选择日期</option></select></label><label>记录 <select id="history-session"><option value="">全部记录</option></select></label><label>曲线 <select id="history-window"><option value="60">1 分钟分均</option><option value="120">2 分钟分均</option><option value="300">5 分钟分均</option><option value="600">10 分钟分均</option><option value="1800">30 分钟分均</option><option value="0">速度趋势</option></select></label><button id="history-refresh" class="connected">刷新</button><button data-export="history" class="connected">导出 CSV</button></div>
+    <div id="day-summary" class="summary-line">连接后载入已保存记录</div><div id="history-chart" class="chart" role="img" aria-label="历史经验分均曲线"></div><h2>全天每分钟收益</h2><div id="history-minutes" class="chart" role="img" aria-label="全天每分钟经验收益"></div>
+    <div class="section-heading"><h2>采样明细</h2><div class="inline"><button id="history-prev">上一页</button><span id="history-page">0 条</span><button id="history-next">下一页</button></div></div><div class="table-wrap"><table><thead><tr><th>时间</th><th>当前经验</th><th>增加</th><th>累计</th><th>有效秒数</th><th>1 分钟分均</th><th>状态</th></tr></thead><tbody id="history-rows"></tbody></table></div>
+  </section>
+  <section class="page" id="combat" hidden>
+    <div class="toolbar"><label>记录日期 <input id="combat-day" type="date"></label><button id="combat-refresh" class="connected">查询</button><button data-export="combat" class="connected">导出战斗</button><button data-export="kills" class="connected">导出击杀</button><button data-command="window" data-target="combat" class="connected">桌面独立窗</button></div>
+    <p class="muted">单人可见画面估计；遮挡、短暂数字与重叠可能漏记。血蓝变化不等于药水使用次数。</p><h2>本次观察</h2><dl id="combat-totals" class="combat-totals"></dl><h2>所选日期汇总</h2><dl id="combat-daily" class="combat-totals"></dl><h2>怪物击杀</h2><div id="kills" class="kill-list"></div><h2>战斗事件 <small>最多显示最近 2,000 条，导出包含当日全部</small></h2><div class="table-wrap"><table><thead><tr><th>时间</th><th>类型</th><th>数值</th><th>明细</th></tr></thead><tbody id="combat-rows"></tbody></table></div>
+  </section>
+  <section class="page" id="quiz" hidden>
+    <div class="toolbar"><button data-capture="quiz" class="primary connected">框选题目与选项</button><button id="quiz-toggle" class="connected">开始读题</button><button id="quiz-pdf" class="connected">下载本机答题 PDF</button></div><div class="answer"><h2 id="quiz-status">尚未开始识别</h2><p id="quiz-question"></p><strong id="quiz-answer">—</strong><p id="quiz-reason">自动识别保守匹配，不确定时不猜答案。选项顺序以游戏内为准。</p><details><summary>识别原文</summary><pre id="quiz-raw"></pre></details></div><form id="quiz-search-form" class="toolbar"><label for="quiz-search">手动查题</label><input id="quiz-search" type="search" placeholder="输入题目或答案关键词"><button class="connected" type="submit">查询</button></form><p class="muted">国服怀旧服参考题库，社区来源未全部实测；匹配结果不代表版本规则已经验证。</p><div id="quiz-entries" class="reading-list"></div>
+  </section>
+  <section class="page" id="knowledge" hidden><form id="knowledge-search-form" class="toolbar"><label for="knowledge-search">本地知识库</label><input id="knowledge-search" type="search" placeholder="搜索职业、地图、任务"><button class="connected" type="submit">搜索</button></form><p class="muted">资料保留区服、版本、日期、来源与置信说明。知识库只从你的本机读取，置信分不是正确概率。</p><div id="knowledge-claims" class="reading-list"></div><div class="knowledge-layout"><div id="knowledge-list" class="reading-list"></div><article id="knowledge-content"><p class="empty">选择一篇资料阅读</p></article></div></section>
+  <section class="page" id="settings" hidden>
+    <form id="settings-form" class="settings-form"><h2>识别与计时</h2><label>当前等级升级所需经验<input id="cap" inputmode="numeric" placeholder="留空则自动识别"></label><div class="inline"><button type="button" data-command="locate" class="connected">自动定位游戏</button><button type="button" data-capture="exp" class="connected">框选经验栏</button><button type="button" data-command="window" data-target="settings" class="connected">打开桌面识别设置</button></div><h2>悬浮球</h2><label>透明度 <output id="opacity-value">58%</output><input id="opacity" type="range" min="45" max="100" value="58"></label><h2>花 Buff 提醒</h2><label class="check"><input id="flower-enabled" type="checkbox" checked>启用提醒</label><label class="check"><input id="music" type="checkbox" checked>播放音乐</label><label>提前秒数<input id="ahead" type="number" min="5" max="30" value="15"></label><div class="inline"><button type="button" data-command="sound" class="connected">试听提醒</button><button type="submit" class="primary connected">保存设置</button></div></form>
+    <section class="section"><h2>读数核验与记录</h2><p>仅在核对实际游戏读数后使用。新建记录会结束当前统计，历史仍然保留。</p><div class="inline"><button data-confirm="level" class="connected">确认刚刚升了一级</button><button data-confirm="rebase" class="connected">跳过差值并接续</button><button data-confirm="reset" class="danger connected">结束本次并新建记录</button></div></section>
+    <section class="section"><h2>诊断与后台评审</h2><p id="review-status">暂无状态</p><p class="muted">沿用程序启动事件触发，不新增定时唤醒或模型轮询。</p><div class="inline"><button data-command="window" data-target="review" class="connected">查看桌面评审详情</button><button data-command="window" data-target="animation" class="connected">预览桌面升级动画</button><button id="disconnect">断开网页连接</button></div><details><summary>采样与保存诊断</summary><pre id="diagnostics">连接后显示</pre></details></section>
+  </section>
+</main>
+<dialog id="capture-dialog"><form method="dialog" class="dialog-heading"><h2>在游戏截图中拖动框选</h2><button aria-label="关闭框选">关闭</button></form><p id="capture-help">请保持游戏可见；截图不会上传。</p><div class="capture-scroll"><canvas id="capture-canvas" aria-label="拖动选择识别区域"></canvas></div><div class="toolbar"><label>X<input id="region-left" type="number" min="0" value="0"></label><label>Y<input id="region-top" type="number" min="0" value="0"></label><label>宽<input id="region-width" type="number" min="40" value="40"></label><label>高<input id="region-height" type="number" min="20" value="20"></label><button id="save-region" class="primary">保存选区</button></div></dialog>
+<div id="level-toast" role="status" hidden></div>
+</body></html>
