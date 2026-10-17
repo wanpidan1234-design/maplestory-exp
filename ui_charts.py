@@ -181,6 +181,16 @@ def plot(canvas, box, rows, *, bars=False, scale=1, tag='plot',time_range=None,
     if bars:
         step = (right-left)/max(bar_slots, len(rows))
         current = int(time.time()//60)*60
+        labels = []
+        for row in rows:
+            label = f"{row['value']:,.0f}" if row.get('observed', True) else '—'
+            if len(label)*font_size*.65 > step-6:
+                label = short_number(row['value']) if row.get('observed', True) else '—'
+            labels.append(label)
+        # Narrow observers retain every bar; thin only value annotations so
+        # neighbouring labels cannot overlap. Wide history charts are unchanged.
+        label_stride = (max(1, math.ceil(max((len(label)*font_size*.65+6 for label in labels), default=0)/step))
+                        if width < 300 else 1)
         for i, row in enumerate(rows):
             xx = left+i*step
             if row.get('observed', True):
@@ -189,14 +199,11 @@ def plot(canvas, box, rows, *, bars=False, scale=1, tag='plot',time_range=None,
                                          round((xx+step-2)*scale), round(bottom*scale),
                                          fill=colors['accent'] if row.get('current',row['timestamp']==current) else colors['bar'],
                                          outline='', tags=(tag,))
-                if bar_labels:
-                    label=f"{row['value']:,.0f}"
-                    if len(label)*font_size*.65 > step-6:
-                        label=short_number(row['value'])
-                    text(xx+step/2,bottom-max(1,h)-3,label,'s')
+                if bar_labels and i % label_stride == 0:
+                    text(xx+step/2,bottom-max(1,h)-3,labels[i],'s')
             else:
                 line((xx+2,bottom-2,xx+step-2,bottom-2),fill=colors['muted'],dash=(2,2))
-                if bar_labels:
+                if bar_labels and i % label_stride == 0:
                     text(xx+step/2,bottom-5,'—','s')
         indices = sorted(set([0, len(rows)//2, len(rows)-1]))
         # Avoid adjacent labels when the first few minutes have just arrived.

@@ -5,23 +5,87 @@ panel coordinates and native controls; auxiliary windows retain their own theme.
 """
 import ctypes
 import math
+from pathlib import Path
 import time
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageDraw, ImageTk, ImageOps, ImageEnhance
 from history_store import local_day
 from monster_portraits import Portraits
 from ui_charts import plot, rate_prefix, daily_chart_rows
 from ui_theme import FONT, MIDNIGHT, format_damage
 
 
-WIDTH = 570
+def flower_shadow(image, remaining_fraction):
+    """Game-style bottom-up dimming, with a fractional boundary for smoothness."""
+    fraction = max(0.0, min(1.0, float(remaining_fraction)))
+    result = image.convert('RGBA')
+    overlay = Image.new('RGBA', result.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+    boundary = result.height*fraction
+    first = math.floor(boundary)
+    if first < result.height:
+        draw.rectangle((0, first+1, result.width, result.height), fill=(20, 35, 54, 178))
+        alpha = round(178*(1-(boundary-first)))
+        draw.line((0, first, result.width, first), fill=(20, 35, 54, alpha))
+    return Image.alpha_composite(result, overlay).convert('RGB')
+
+
+WIDTH = 285
 HEIGHT = 910
-FOOTER = 53
-COMBAT_EXTRA = 228
+CONTENT_HEIGHT = 1208
+FOOTER = 90
+COMBAT_EXTRA = 350
 NUMBER_FONT = 'Bahnschrift'
+
+
+def percent_rates(per_minute, current_exp, current_percent, cap=None):
+    """Project the displayed rate onto one level, without changing accounting."""
+    def finite(value):
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+    if not finite(per_minute) or per_minute < 0:
+        return None, None
+    if finite(cap) and cap > 0:
+        minute = per_minute / cap * 100
+    elif (finite(current_exp) and current_exp > 0 and
+          finite(current_percent) and 0 < current_percent <= 100):
+        # The accepted HUD percentage is rounded; this is a display conversion
+        # only, never a cap estimate for upgrade accounting.
+        minute = per_minute / current_exp * current_percent
+    else:
+        return None, None
+    hour = minute * 60
+    return (minute, hour) if math.isfinite(hour) else (None, None)
+
+
+def level_up_minutes(per_minute, current_exp, current_percent, cap=None):
+    """Time to the next level at the accepted one-minute rate (no clock tick)."""
+    rate, _ = percent_rates(per_minute,current_exp,current_percent,cap)
+    if rate is None or rate <= 0:
+        return None
+    if isinstance(cap,(int,float)) and math.isfinite(cap) and cap > 0:
+        if (not isinstance(current_exp,(int,float)) or not math.isfinite(current_exp)
+                or not 0 <= current_exp <= cap):
+            return None
+        minutes = (cap-current_exp)/per_minute
+    else:
+        minutes = (100-current_percent)/rate
+    return minutes if math.isfinite(minutes) and minutes >= 0 else None
+
+
+def format_level_eta(minutes):
+    if minutes is None:
+        return '暂无法估算'
+    if minutes < 1:
+        return '不足 1 分钟'
+    rounded = math.ceil(minutes)
+    days, rest = divmod(rounded,1440)
+    hours, remaining = divmod(rest,60)
+    return ' '.join(text for text in (f'{days} 天' if days else '',
+        f'{hours} 小时' if hours else '',f'{remaining} 分钟' if remaining else '') if text)
 
 
 class MidnightPanel:
@@ -42,12 +106,12 @@ class MidnightPanel:
         self.region_after = None
         self.region_token = None
         self.window_bindings = {}
-        self.chart_boxes = dict(curve=(20, 398, 530, 74), bars=(20, 493, 530, 92),
-                                daily=(20, 605, 530, 92), daycurve=(20,727,530,110))
+        self.chart_boxes = dict(curve=(16, 658, 248, 80), bars=(16, 772, 248, 92),
+                                daily=(16, 898, 248, 92), daycurve=(16,1024,248,70))
         self.daily_rows = []
-        self.layout_boxes = dict(header=(0,0,570,50),console=(20,68,530,185),
-            session=(20,269,530,64),combat_summary=(20,333,530,35),
-            combat_body=(20,368,530,228),footer=(0,HEIGHT-FOOTER,570,FOOTER))
+        self.layout_boxes = dict(header=(0,0,WIDTH,70),console=(16,88,248,371),
+            session=(16,475,248,112),combat_summary=(16,587,248,35),
+            combat_body=(16,622,248,COMBAT_EXTRA),footer=(0,HEIGHT-FOOTER,WIDTH,FOOTER))
         self.opacity_scale = None
         self.canvas = tk.Canvas(window, width=self.p(WIDTH), height=self.p(HEIGHT),
                                 bg=MIDNIGHT['surface'], highlightthickness=1,
@@ -180,99 +244,119 @@ class MidnightPanel:
 
     def _build(self):
         c = self.canvas
-        c.create_rectangle(0,0,self.p(WIDTH),self.p(50),fill='#1b344a',outline='')
-        self.line((0,50,570,50))
-        c.create_image(self.p(27),self.p(26),image=self.icon('crosshair',MIDNIGHT['accent']))
-        self.panel_title = self.text(44,26,'经验观察器',14,bold=True)
-        self.status_dot = c.create_oval(*[self.p(v) for v in (339,23,344,28)],fill=MIDNIGHT['success'],outline='')
-        self.session_state = self.text(351,26,'等待识别',11,MIDNIGHT['muted'])
-        self.button('settings',488,11,29,'',self.toggle_options,icon='settings',height=29)
-        self.button('collapse',526,11,29,'',self.orb.hide_panel,icon='close',height=29)
+        c.create_rectangle(0,0,self.p(WIDTH),self.p(70),fill='#1b344a',outline='')
+        self.line((0,70,WIDTH,70))
+        c.create_image(self.p(24),self.p(26),image=self.icon('crosshair',MIDNIGHT['accent']))
+        self.panel_title = self.text(41,26,'经验观察器',14,bold=True)
+        self.status_dot = c.create_oval(*[self.p(v) for v in (21,51,26,56)],fill=MIDNIGHT['success'],outline='')
+        self.session_state = self.text(34,54,'等待识别',11,MIDNIGHT['muted'])
+        self.button('settings',208,11,29,'',self.toggle_options,icon='settings',height=29)
+        self.button('collapse',244,11,29,'',self.orb.hide_panel,icon='close',height=29)
         for name in ('settings','collapse'):
             self.controls[name].configure(bg='#1b344a',highlightbackground='#1b344a')
-        self.text(20,77,'当前分均',12,MIDNIGHT['muted'])
-        self.panel_subtitle = self.text(258,77,'1min 窗口',12,MIDNIGHT['muted'],anchor='e')
-        self.live_value = self.text(20,118,'—',48,number=True)
-        self.live_unit = self.text(258,127,'经验 / 分',12,MIDNIGHT['muted'],anchor='e')
-        self.live_hour = self.text(20,157,'折算 — / 时',12,MIDNIGHT['muted'])
+        self.text(16,88,'当前分均',12,MIDNIGHT['muted'])
+        self.panel_subtitle = self.text(264,88,'1min 窗口',12,MIDNIGHT['muted'],anchor='e')
+        self.live_value = self.text(16,126,'—',48,number=True)
+        self.live_unit = self.text(16,158,'经验 / 分',11,MIDNIGHT['muted'])
+        self.live_hour = self.text(83,158,'折算 — / 时',11,MIDNIGHT['muted'])
+        icon = Image.open(Path(__file__).parent/'assets/holy-symbol-anchor.png').convert('RGB')
+        icon = icon.resize((self.p(36), self.p(36)), Image.Resampling.NEAREST)
+        self.flower_base = icon
+        self.flower_shadow_key = None
+        self.flower_shadow_photo = None
+        self.flower_images = {
+            True: ImageTk.PhotoImage(icon, master=c),
+            False: ImageTk.PhotoImage(ImageEnhance.Brightness(ImageOps.grayscale(icon)).enhance(.4), master=c)}
+        self.flower_icon = c.create_image(self.p(226),self.p(105),image=self.flower_images[False],anchor='nw',tags=('flower',))
+        self.flower_outline = [self.text(228+dx,138+dy,'—',12,'#101820',anchor='sw',bold=True,number=True,tags=('flower',))
+                               for dx,dy in ((-1,0),(1,0),(0,-1),(0,1))]
+        self.flower_timer = self.text(228,138,'—',12,'#ffdf53',anchor='sw',bold=True,number=True,tags=('flower',))
+        self.flower_caption = self.text(244,149,'等待',9,MIDNIGHT['muted'],anchor='center',tags=('flower',))
+        c.tag_bind('flower','<Button-1>',lambda event:self.orb.show_settings())
+        self.percent_minute = self.text(16,180,'— % / 分',12,MIDNIGHT['muted'])
+        self.percent_hour = self.text(264,180,'— % / 时',12,MIDNIGHT['muted'],anchor='e')
+        self.eta_label = self.text(16,202,'预计升级',12,MIDNIGHT['muted'])
+        self.eta_value = self.text(264,202,'暂无法估算',12,MIDNIGHT['muted'],anchor='e')
         self.inline_rates, self.rate_labels, self.rate_progress = {}, {}, {}
-        for seconds,x in ((120,20),(300,104),(1800,188)):
-            self.rate_labels[seconds] = self.text(x,190,f'{seconds//60}min',12,MIDNIGHT['muted'])
-            self.inline_rates[seconds] = self.text(x,212,'—',19,number=True)
-            track = self.line((x,232,x+70,232),MIDNIGHT['track'],3,capstyle='round')
-            fill = self.line((x,232,x,232),MIDNIGHT['accent'],3,capstyle='round',state='hidden')
-            caption = self.text(x,242,'等待采样',9,MIDNIGHT['muted'],anchor='nw',width=self.p(77))
-            self.rate_progress[seconds] = dict(track=track,fill=fill,caption=caption,x=x,y=232,width=70)
-        self.line((280,68,280,253))
-        self.text(302,77,'当前经验',12,MIDNIGHT['muted'])
-        c.create_rectangle(self.p(509),self.p(66),self.p(550),self.p(88),outline=MIDNIGHT['line'])
-        self.level = self.text(530,77,'Lv.—',12,number=True,anchor='center')
-        self.current_value = self.text(302,114,'—',27,number=True)
-        self.current_percent = self.text(550,118,'—',13,MIDNIGHT['muted'],number=True,anchor='e')
-        self.exp_box = (302,140,248)
-        self.line((302,140,550,140),MIDNIGHT['track'],4,capstyle='round')
-        self.progress = self.line((302,140,302,140),MIDNIGHT['accent'],4,capstyle='round',state='hidden')
+        for seconds,x in ((120,16),(300,100),(1800,184)):
+            self.rate_labels[seconds] = self.text(x,226,f'{seconds//60}min',12,MIDNIGHT['muted'])
+            self.inline_rates[seconds] = self.text(x,248,'—',19,number=True)
+            track = self.line((x,268,x+70,268),MIDNIGHT['track'],3,capstyle='round')
+            fill = self.line((x,268,x,268),MIDNIGHT['accent'],3,capstyle='round',state='hidden')
+            caption = self.text(x,278,'等待采样',9,MIDNIGHT['muted'],anchor='nw',width=self.p(77))
+            self.rate_progress[seconds] = dict(track=track,fill=fill,caption=caption,x=x,y=268,width=70)
+        self.line((16,308,264,308))
+        self.text(16,326,'当前经验',12,MIDNIGHT['muted'])
+        c.create_rectangle(self.p(223),self.p(315),self.p(264),self.p(337),outline=MIDNIGHT['line'])
+        self.level = self.text(244,326,'Lv.—',12,number=True,anchor='center')
+        self.current_value = self.text(16,363,'—',27,number=True)
+        self.current_percent = self.text(264,367,'—',13,MIDNIGHT['muted'],number=True,anchor='e')
+        self.exp_box = (16,389,248)
+        self.line((16,389,264,389),MIDNIGHT['track'],4,capstyle='round')
+        self.progress = self.line((16,389,16,389),MIDNIGHT['accent'],4,capstyle='round',state='hidden')
         self.hud_items = {}
-        for name,y,color in (('hp',165,'#c293a5'),('mp',197,'#77aace')):
-            self.text(302,y+2,name.upper(),12,number=True)
-            item = self.text(332,y,'—',13,number=True)
-            percent = self.text(550,y,'—',12,MIDNIGHT['muted'],number=True,anchor='e')
-            self.line((332,y+13,550,y+13),MIDNIGHT['track'],4)
-            bar = self.line((332,y+13,332,y+13),color,4,state='hidden')
-            self.hud_items[name] = dict(value=item,bar=bar,percent=percent,x=332,y=y+13,width=218)
-        c.create_rectangle(self.p(20),self.p(269),self.p(550),self.p(333),fill='#1d374e',outline='')
-        self.line((20,269,550,269)); self.line((20,333,550,333))
-        for name,x,label in (('total',32,'本次获得'),('today',164,'今日获得'),('minute',294,'全程分均'),('timer',410,'有效计时')):
-            self.text(x,289,label,12,MIDNIGHT['muted'])
-            setattr(self,name,self.text(x,311,'—',17 if name=='timer' else 18,number=True))
-        self.button('combat_toggle',18,335,120,' 战斗明细',self.toggle_combat,icon='shield',height=31)
-        self.kill_summary = self.text(514,351,'本次击杀 —',12,MIDNIGHT['muted'],anchor='e')
-        self.chevron = c.create_image(self.p(540),self.p(351),image=self.icon('chevron'))
+        for name,y,color in (('hp',414,'#c293a5'),('mp',446,'#77aace')):
+            self.text(16,y+2,name.upper(),12,number=True)
+            item = self.text(46,y,'—',13,number=True)
+            percent = self.text(264,y,'—',12,MIDNIGHT['muted'],number=True,anchor='e')
+            self.line((46,y+13,264,y+13),MIDNIGHT['track'],4)
+            bar = self.line((46,y+13,46,y+13),color,4,state='hidden')
+            self.hud_items[name] = dict(value=item,bar=bar,percent=percent,x=46,y=y+13,width=218)
+        c.create_rectangle(self.p(16),self.p(475),self.p(264),self.p(587),fill='#1d374e',outline='')
+        self.line((16,475,264,475)); self.line((16,587,264,587))
+        for name,x,y,label in (('total',24,493,'本次获得'),('today',148,493,'今日获得'),
+                                ('minute',24,547,'全程分均'),('timer',148,547,'有效计时')):
+            self.text(x,y,label,12,MIDNIGHT['muted'])
+            setattr(self,name,self.text(x,y+22,'—',17 if name=='timer' else 18,number=True))
+        self.button('combat_toggle',14,589,110,' 战斗明细',self.toggle_combat,icon='shield',height=31)
+        self.kill_summary = self.text(242,605,'本次击杀 —',11,MIDNIGHT['muted'],anchor='e')
+        self.chevron = c.create_image(self.p(258),self.p(605),image=self.icon('chevron'))
         c.tag_bind(self.chevron,'<Button-1>',lambda event:self.toggle_combat())
-        self.line((20,368,550,368))
+        self.line((16,622,264,622))
         self._build_combat()
-        self.text(20,386,'观测分均',12,tags=('tail',))
-        self.curve_caption = self.text(550,386,'最近 60 秒 · 北京时间',12,MIDNIGHT['muted'],anchor='e',tags=('tail',))
-        self.text(20,483,'每分钟获得',12,tags=('tail',))
-        self.bar_caption = self.text(550,483,'最近 12 分钟',12,MIDNIGHT['muted'],anchor='e',tags=('tail',))
-        self.text(20,593,'每日获得经验',12,tags=('tail',))
-        self.text(550,593,'近 7 天 · — 未记录',12,MIDNIGHT['muted'],anchor='e',tags=('tail',))
-        self.text(20,713,'今日每分钟获得',12,tags=('tail',))
-        self.day_caption=self.text(550,713,'北京时间 · 仅记录分钟',12,MIDNIGHT['muted'],anchor='e',tags=('tail',))
-        self.detail = self.text(20,838,'',10,MIDNIGHT['muted'],anchor='nw',width=self.p(530),tags=('tail',))
+        self.text(16,638,'观测分均',12,tags=('tail',))
+        self.curve_caption = self.text(264,655,'最近 60 秒 · 北京时间',10,MIDNIGHT['muted'],anchor='e',tags=('tail',))
+        self.text(16,752,'每分钟获得',12,tags=('tail',))
+        self.bar_caption = self.text(264,769,'最近 12 分钟',10,MIDNIGHT['muted'],anchor='e',tags=('tail',))
+        self.text(16,878,'每日获得经验',12,tags=('tail',))
+        self.text(264,895,'近 7 天 · — 未记录',10,MIDNIGHT['muted'],anchor='e',tags=('tail',))
+        self.text(16,1004,'今日每分钟获得',12,tags=('tail',))
+        self.day_caption=self.text(264,1021,'北京时间 · 仅记录分钟',10,MIDNIGHT['muted'],anchor='e',tags=('tail',))
+        self.detail = self.text(16,1098,'',10,MIDNIGHT['muted'],anchor='nw',width=self.p(248),tags=('tail',))
         self.footer = tk.Frame(c,bg='#1a3248',highlightbackground=MIDNIGHT['line'],highlightthickness=1)
         self.footer.place(relx=0,rely=1,anchor='sw',relwidth=1,height=self.p(FOOTER))
-        self.button('history',19,10,98,' 历史记录',self.orb.show_history,icon='history',height=32,parent=self.footer)
-        self.button('multiscale',122,10,85,' 多尺度',self.orb.show_multiscale,icon='chart',height=32,parent=self.footer)
-        self.button('preview',215,10,104,' 升级预览',self.orb.celebrate_level,icon='bolt',height=32,parent=self.footer)
-        self.button('review',330,10,123,'后台评审',self.show_review,height=32,parent=self.footer)
-        self.toggle_tag = self.button('pause',464,10,88,' 暂停',self.orb.toggle,icon='pause',height=32,primary=True,parent=self.footer)
+        self.button('history',9,6,94,' 历史记录',self.orb.show_history,icon='history',height=32,parent=self.footer)
+        self.button('multiscale',105,6,76,' 多尺度',self.orb.show_multiscale,icon='chart',height=32,parent=self.footer)
+        self.button('preview',183,6,94,' 升级预览',self.orb.celebrate_level,icon='bolt',height=32,parent=self.footer)
+        self.button('review',9,46,164,'后台评审',self.show_review,height=32,parent=self.footer)
+        self.toggle_tag = self.button('pause',181,46,94,' 暂停',self.orb.toggle,icon='pause',height=32,primary=True,parent=self.footer)
         self.kill_portraits = Portraits(c)
         self.kill_photos = []
 
     def _build_combat(self):
         c = self.canvas
         before = set(c.find_all())
-        self.combat_state = self.text(20,388,'本次 · 等待画面',11,MIDNIGHT['muted'])
-        self.button('combat_full',436,374,114,'完整战斗窗口',self.orb.show_combat,height=28)
-        for name,x,label in (('damage_dealt',20,'已识别造成伤害'),('damage_taken',160,'已识别受到伤害'),('kills_current',300,'本次击杀'),('kills_today',432,'今日击杀')):
-            self.text(x,418,label,11,MIDNIGHT['muted'])
-            setattr(self,name,self.text(x,443,'—',20,number=True))
+        self.combat_state = self.text(16,642,'本次 · 等待画面',11,MIDNIGHT['muted'])
+        self.button('combat_full',150,628,114,'完整战斗窗口',self.orb.show_combat,height=28)
+        for name,x,y,label in (('damage_dealt',16,674,'已识别造成伤害'),('damage_taken',148,674,'已识别受到伤害'),
+                                ('kills_current',16,730,'本次击杀'),('kills_today',148,730,'今日击杀')):
+            self.text(x,y,label,11,MIDNIGHT['muted'])
+            setattr(self,name,self.text(x,y+24,'—',20,number=True))
         self.combat_vitals = {}
-        for name,x,label in (('hp',20,'HP'),('mp',300,'MP')):
-            self.combat_vitals[name] = self.text(x,476,f'{label} 消耗 — · 恢复 —',11,MIDNIGHT['muted'])
-        self.line((20,496,550,496))
-        self.text(20,514,'击杀分类',12)
-        self.button('kill_scope',359,500,70,self.kill_scope,self.toggle_kill_scope,height=27)
-        self.button('kill_next',445,500,104,'下一页',self.next_kill_page,height=27)
+        for name,y,label in (('hp',787,'HP'),('mp',811,'MP')):
+            self.combat_vitals[name] = self.text(16,y,f'{label} 消耗 — · 恢复 —',11,MIDNIGHT['muted'])
+        self.line((16,830,264,830))
+        self.text(16,848,'击杀分类',12)
+        self.button('kill_scope',100,834,64,self.kill_scope,self.toggle_kill_scope,height=27)
+        self.button('kill_next',174,834,90,'下一页',self.next_kill_page,height=27)
         self.kill_tiles = []
-        for x in (20,290):
-            pic = c.create_image(self.p(x),self.p(550),anchor='w')
-            name = self.text(x+48,541,'等待怪物画面',11)
-            number = self.text(x+48,561,'',13,MIDNIGHT['accent'],number=True)
+        for y in (881,927):
+            pic = c.create_image(self.p(16),self.p(y),anchor='w')
+            name = self.text(64,y-9,'等待怪物画面',11)
+            number = self.text(64,y+11,'',13,MIDNIGHT['accent'],number=True)
             self.kill_tiles.append((pic,name,number))
-        self.kill_hint = self.text(20,583,'',10,MIDNIGHT['muted'])
-        self.line((20,596,550,596))
+        self.kill_hint = self.text(16,959,'',10,MIDNIGHT['muted'])
+        self.line((16,972,264,972))
         for item in set(c.find_all())-before:
             c.addtag_withtag('combat',item)
         c.itemconfigure('combat',state='hidden')
@@ -286,10 +370,10 @@ class MidnightPanel:
         self.orb.panel_canvas = self.canvas
 
     def _reflow(self):
-        total = HEIGHT + (COMBAT_EXTRA if self.expanded else 0) + self.note_extra
+        total = CONTENT_HEIGHT + (COMBAT_EXTRA if self.expanded else 0) + self.note_extra
         self.content_height = total
         max_height = max(self.p(FOOTER+120), self.monitor['height']-36)
-        height = min(self.p(total),max_height)
+        height = min(self.p(HEIGHT + (COMBAT_EXTRA if self.expanded else 0)),max_height)
         self.window.geometry(f'{self.p(WIDTH)}x{height}')
         self._schedule_region()
         self.canvas.configure(scrollregion=(0,0,self.p(WIDTH),self.p(total)))
@@ -304,7 +388,7 @@ class MidnightPanel:
         self.visible_height = height/self.scale
         self.layout_boxes['footer'] = (0,self.visible_height-FOOTER,WIDTH,FOOTER)
         if height < self.p(self.content_height):
-            self.scrollbar.place(x=self.p(556),y=self.p(51),width=self.p(12),height=height-self.p(FOOTER+53))
+            self.scrollbar.place(x=self.p(WIDTH-12),y=self.p(71),width=self.p(10),height=height-self.p(FOOTER+73))
             self.scrollbar.lift()
         else:
             self.scrollbar.place_forget()
@@ -398,7 +482,7 @@ class MidnightPanel:
             self.canvas.yview_moveto(target/self.content_height)
 
     def _drag_start(self,event):
-        if self.canvas.canvasy(event.y) <= self.p(49):
+        if self.canvas.canvasy(event.y) <= self.p(69):
             self.drag_origin = (event.x_root,event.y_root,self.window.winfo_x(),self.window.winfo_y())
             self.drag_monitor = self.monitor
         elif self.options:
@@ -433,7 +517,7 @@ class MidnightPanel:
             return
         frame = self.options = tk.Frame(self.canvas,bg=MIDNIGHT['raised'],
             highlightthickness=1,highlightbackground=MIDNIGHT['line'])
-        frame.place(x=self.p(294),y=self.p(49),width=self.p(261),height=self.p(128))
+        frame.place(x=self.p(12),y=self.p(69),width=self.p(261),height=self.p(128))
         tk.Label(frame,text='悬浮球透明度',bg=MIDNIGHT['raised'],fg=MIDNIGHT['ink'],
                  font=(FONT,-self.p(12))).place(x=self.p(12),y=self.p(9))
         slider = tk.Scale(frame,from_=45,to=100,resolution=1,orient='horizontal',
@@ -444,7 +528,7 @@ class MidnightPanel:
         slider.set(round(self.orb.alpha*100))
         slider.configure(command=self.orb.set_opacity)
         self.opacity_scale = slider
-        slider.place(x=self.p(12),y=self.p(31),width=self.p(235),height=self.p(49))
+        slider.place(x=self.p(12),y=self.p(31),width=self.p(235),height=self.p(69))
         self.button('recognition',12,88,235,'打开识别设置',self.orb.show_settings,height=28,parent=frame)
         slider.focus_set()
 
@@ -455,6 +539,46 @@ class MidnightPanel:
         view = getattr(self.orb, 'review_view', None)
         if view is not None:
             view.show_details()
+
+    def paint_flower(self, buff, running):
+        active = buff['enabled'] and running and buff['state'] in ('active','soon','present')
+        remaining = buff.get('remaining_seconds')
+        if active and remaining is not None:
+            fraction = max(0, min(1, remaining/120))
+            key = round(fraction*self.flower_base.height, 2)
+            if key != self.flower_shadow_key:
+                self.flower_shadow_photo = ImageTk.PhotoImage(flower_shadow(self.flower_base, fraction), master=self.canvas)
+                self.flower_shadow_key = key
+            picture = self.flower_shadow_photo
+        else:
+            picture = self.flower_images[active]
+        self.canvas.itemconfigure(self.flower_icon,image=picture)
+        timer, caption = '—', '等待'
+        if not buff['enabled']:
+            caption = '已关闭'
+        elif not running:
+            caption = '已暂停'
+        elif buff['seconds'] is not None:
+            timer = str(buff['seconds'])
+            caption = '预计' if buff.get('estimated') else '花'
+        elif buff['minutes'] is not None:
+            timer = f"{buff['minutes']}分"
+            caption = '预计' if buff.get('estimated') else '花'
+        elif buff['state'] == 'present':
+            caption = '读秒中'
+        elif buff['text'] == '未见花 Buff':
+            caption = '未检测到'
+        elif buff['text'] == '花 · 待确认':
+            caption = '待确认'
+        if buff['audio_error'] and buff['music']:
+            caption = '预计' if buff.get('estimated') else '音效异常'
+        if not active:
+            timer = '—'
+        for item in [self.flower_timer, *self.flower_outline]:
+            self.canvas.itemconfigure(item,text=timer)
+        self.canvas.itemconfigure(self.flower_timer,fill='#ffdf53' if buff['seconds'] is not None else '#ffffff')
+        self.canvas.itemconfigure(self.flower_caption,text=caption,
+                                  fill=MIDNIGHT['warning'] if buff.get('estimated') or buff['audio_error'] else MIDNIGHT['muted'])
 
     def paint(self, snapshot, window_display):
         b,c = self.orb.backend,self.canvas
@@ -468,31 +592,44 @@ class MidnightPanel:
         if state=='采样中':
             state = f"采样 {math.floor(rate['observed_seconds']*10)/10:.1f} / 60 秒"
         self.fit(self.session_state,state,11,130,color,number=False)
+        flower = getattr(b, 'flower', None)
+        if flower is not None:
+            self.paint_flower(flower.snapshot(), b.running)
         c.itemconfigure(self.status_dot,fill=color)
         elapsed = int(b.tracker.elapsed)
-        self.fit(self.timer,f'{elapsed//3600:02}:{elapsed//60%60:02}:{elapsed%60:02}',17,124)
+        self.fit(self.timer,f'{elapsed//3600:02}:{elapsed//60%60:02}:{elapsed%60:02}',17,108)
         minute,_ = b.tracker.rates()
         known = b.tracker.previous is not None
         totals_known = known or bool(getattr(b,'records',None)) or b.tracker.total>0 or b.tracker.elapsed>0
         fresh = known and b.running and not held and b.fresh_reading()
-        self.fit(self.total,f'{b.tracker.total:,.0f}' if totals_known else '—',18,119)
+        self.fit(self.total,f'{b.tracker.total:,.0f}' if totals_known else '—',18,108)
         self.fit(self.minute,f'{minute:,.0f}' if totals_known else '—',18,104)
         days = b.history.days()
         today_key = local_day(time.time())
         self.daily_rows = daily_chart_rows(days,today_key)
         today = next((r['gain'] for r in days if r['day']==today_key),0)
-        self.fit(self.today,f'{today:,}',18,117)
+        self.fit(self.today,f'{today:,}',18,108)
         realtime,prefix = rate['value'],rate_prefix(rate,held)
-        unit_box = c.bbox(self.live_unit)
-        unit_width = unit_box[2]-unit_box[0]
-        number_width = (self.p(238)-unit_width-self.p(10))/self.scale
-        self.fit(self.live_value,f'{prefix}{realtime:,.0f}' if realtime is not None else '—',48,number_width,
+        self.fit(self.live_value,f'{prefix}{realtime:,.0f}' if realtime is not None else '—',48,198,
                  MIDNIGHT['warning'] if held else MIDNIGHT['ink'])
-        bounds = c.bbox(self.live_value)
-        c.coords(self.live_unit,bounds[2]+self.p(7)+unit_width,self.p(127))
         projected = f'{prefix}{realtime*60:,.0f}' if realtime is not None else '—'
-        self.fit(self.live_hour,f'折算 {projected} / 时',12,238,
+        self.fit(self.live_hour,f'折算 {projected} / 时',11,181,
                  MIDNIGHT['warning'] if held else MIDNIGHT['muted'],number=False)
+        current_exp = snapshot.get('current_exp',b.tracker.previous if fresh else None)
+        pct = snapshot.get('current_percent',b.latest.percent if fresh and b.latest else None)
+        percent_minute, percent_hour = percent_rates(realtime,current_exp,pct,snapshot.get('current_cap'))
+        for item,value,unit in ((self.percent_minute,percent_minute,'分'),
+                                (self.percent_hour,percent_hour,'时')):
+            label = f'{prefix}{value:,.2f} % / {unit}' if value is not None else f'— % / {unit}'
+            self.fit(item,label,12,118,MIDNIGHT['warning'] if held else MIDNIGHT['muted'],number=False)
+        eta = level_up_minutes(realtime,current_exp,pct,snapshot.get('current_cap'))
+        eta_text = format_level_eta(eta)
+        if eta is not None and prefix:
+            eta_text = f'≤ {eta_text}'
+        self.fit(self.eta_label,'上次估算' if held else '预计升级',12,72,
+                 MIDNIGHT['warning'] if held else MIDNIGHT['muted'],number=False)
+        self.fit(self.eta_value,eta_text,12,164,
+                 MIDNIGHT['warning'] if held else MIDNIGHT['ink'],number=False)
         for seconds,item in self.inline_rates.items():
             sample = window_display(snapshot,seconds)
             controls = self.rate_progress[seconds]
@@ -502,10 +639,8 @@ class MidnightPanel:
             c.coords(controls['fill'],self.p(x),self.p(y),self.p(x+width*sample['ratio']),self.p(y))
             c.itemconfigure(controls['fill'],state='normal' if sample['ratio']>0 else 'hidden',fill=value_color)
             c.itemconfigure(controls['caption'],text=sample['caption'],fill=value_color if held else MIDNIGHT['muted'])
-        current_exp = snapshot.get('current_exp',b.tracker.previous if fresh else None)
-        self.fit(self.current_value,f'{current_exp:,}' if current_exp is not None else '—',27,175,
+        self.fit(self.current_value,f'{current_exp:,}' if current_exp is not None else '—',27,170,
                  MIDNIGHT['warning'] if held else MIDNIGHT['ink'])
-        pct = snapshot.get('current_percent',b.latest.percent if fresh and b.latest else None)
         self.fit(self.current_percent,f'{pct:.2f}%' if pct is not None else '待识别',13,70,
                  MIDNIGHT['warning'] if held else MIDNIGHT['muted'],number=pct is not None)
         level = getattr(b.tracker,'level',None)
@@ -561,12 +696,12 @@ class MidnightPanel:
         kills = service.kill_summary() if service and hasattr(service,'kill_summary') else None
         current = (kills or {}).get('totals',{})
         today = (kills or {}).get('today',current)
-        c.itemconfigure(self.kill_summary,text=f'本次击杀 {sum(current.values()):,}')
+        self.fit(self.kill_summary,f'本次击杀 {sum(current.values()):,}',11,114,number=False)
         if not self.expanded:
             return
         c.itemconfigure(self.combat_state,text='本次 · 画面估算' if fresh else '本次 · 已暂停' if service and not service.running else '本次 · 等待画面')
         for name in ('damage_dealt','damage_taken'):
-            self.fit(getattr(self,name),format_damage(totals.get(name,0)) if known else '—',20,128)
+            self.fit(getattr(self,name),format_damage(totals.get(name,0)) if known else '—',20,116)
         self.fit(self.kills_current,f'{sum(current.values()):,}',20,116)
         self.fit(self.kills_today,f'{sum(today.values()):,}',20,116)
         for name,item in self.combat_vitals.items():
@@ -599,18 +734,18 @@ class MidnightPanel:
         for name,rows,is_bars in (('curve',curve,False),('bars',bars,True),('daily',self.daily_rows,True)):
             x,y,width,height = self.chart_boxes[name]
             plot(self.canvas,(x,y+offset,width,height),rows,bars=is_bars,scale=self.scale,
-                 tag=name,time_range=None if is_bars else time_range,palette=MIDNIGHT,font_size=11,
+                 tag=name,time_range=None if is_bars else time_range,palette=MIDNIGHT,font_size=9,
                  bar_labels=is_bars,bar_slots=7 if name=='daily' else 12)
         x,y,width,height=self.chart_boxes['daycurve']
         plot(self.canvas,(x,y+offset,width,height),day_curve,scale=self.scale,tag='daycurve',
-             palette=MIDNIGHT,font_size=11,indexed=True,max_gap=None)
+             palette=MIDNIGHT,font_size=9,indexed=True,max_gap=None)
         self.canvas.itemconfigure(self.day_caption,text=f'北京时间 · 已记录 {len(day_curve)} 分钟')
 
     def gain_lanes(self):
-        lanes = {'exp':(548,102,100,MIDNIGHT['accent'],8,'e')}
+        lanes = {'exp':(262,350,100,MIDNIGHT['accent'],8,'e')}
         if self.expanded:
-            lanes.update(damage_dealt=(147,430,80,MIDNIGHT['accent'],8,'e'),
-                         damage_taken=(287,430,80,'#c293a5',8,'e'))
+            lanes.update(damage_dealt=(132,685,80,MIDNIGHT['accent'],8,'e'),
+                         damage_taken=(264,685,80,'#c293a5',8,'e'))
         return lanes
 
     def close(self):

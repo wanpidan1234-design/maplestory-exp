@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from multiscale_view import trend_hint
 from orb import Orb, rate_window_display
-from ui_midnight import MidnightPanel
+from ui_midnight import MidnightPanel, percent_rates, level_up_minutes, format_level_eta
 from ui_theme import ACCENT, WARNING, MIDNIGHT
 from app_time import local_day
 
@@ -65,6 +65,8 @@ class PrimaryRateUiTests(unittest.TestCase):
                      'progress','detail','toggle_tag','inline_rates','rate_progress'):
             setattr(renderer,name,getattr(view,name))
         renderer.live_unit,renderer.level='live_unit','level'
+        renderer.percent_minute,renderer.percent_hour='percent_minute','percent_hour'
+        renderer.eta_label,renderer.eta_value='eta_label','eta_value'
         def fit(item,value,size,width,color=None,**options):
             view.fit_value(view.panel_canvas,item,value,size,width,color=color)
             view.panel_canvas.itemconfigure(item,text=value,**({'fill':color} if color else {}))
@@ -94,6 +96,77 @@ class PrimaryRateUiTests(unittest.TestCase):
         self.assertEqual(view.state()[0], '识别正常')
         self.assertEqual(self.fitted_values(view)['live_value'], '125')
         self.assertEqual(self.fitted_values(view)['live_hour'], '折算 7,500 / 时')
+
+    def test_percentage_rates_use_the_same_window_and_accepted_hud(self):
+        view, snapshot = self.make_orb(value=1000)
+        snapshot.update(current_exp=50000,current_percent=25)
+        view.paint_panel()
+        values = self.fitted_values(view)
+        self.assertEqual(values['percent_minute'],'0.50 % / 分')
+        self.assertEqual(values['percent_hour'],'30.00 % / 时')
+        # A retry must use the saved HUD pair, not the latest unconfirmed reading.
+        snapshot.update(display_state='held',display_age_seconds=5)
+        view.backend.latest.percent=90
+        view.backend.tracker.previous=100
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['percent_hour'],'30.00 % / 时')
+
+    def test_percentage_conversion_handles_unknown_zero_and_exact_cap(self):
+        self.assertEqual(percent_rates(1000,50000,25),(0.5,30))
+        self.assertEqual(percent_rates(0,50000,25),(0,0))
+        self.assertEqual(percent_rates(1000,0,0,100000),(1,60))
+        self.assertEqual(percent_rates(3000,50000,25,100000),(3,180))
+        for rate,exp,pct in ((None,50000,25),(1000,0,0),(1000,50000,None),
+                             (float('nan'),50000,25),(1000,50000,101)):
+            with self.subTest(rate=rate,exp=exp,pct=pct):
+                self.assertEqual(percent_rates(rate,exp,pct),(None,None))
+
+    def test_percentage_rates_keep_missing_and_lower_bound_states(self):
+        view, snapshot = self.make_orb(value=None,state='paused')
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['percent_minute'],'— % / 分')
+        snapshot['primary'].update(value=1000,state='ready',has_gaps=True)
+        snapshot.update(current_exp=50000,current_percent=25)
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['percent_minute'],'≥ 0.50 % / 分')
+
+    def test_level_eta_uses_current_level_and_same_primary_rate(self):
+        view, snapshot = self.make_orb(value=1000)
+        snapshot.update(current_exp=50000,current_percent=25)
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['eta_value'],'2 小时 30 分钟')
+        snapshot.update(current_cap=100000)
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['eta_value'],'50 分钟')
+        snapshot['primary']['has_gaps']=True
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['eta_value'],'≤ 50 分钟')
+        snapshot.update(display_state='held',display_age_seconds=8)
+        view.backend.tracker.previous=99999
+        view.backend.latest.percent=99.99
+        view.paint_panel()
+        self.assertEqual(self.fitted_values(view)['eta_label'],'上次估算')
+        self.assertEqual(self.fitted_values(view)['eta_value'],'≤ 50 分钟')
+
+    def test_level_eta_unknown_and_duration_boundaries(self):
+        self.assertEqual(level_up_minutes(1000,50000,25),150)
+        self.assertEqual(level_up_minutes(1000,0,None,100000),100)
+        for args in ((0,50000,25),(None,50000,25),(1000,0,0),
+                     (1000,50000,None),(1000,100001,99,100000),
+                     (1000,None,99,100000),(float('inf'),50000,25)):
+            with self.subTest(args=args):
+                self.assertIsNone(level_up_minutes(*args))
+        for minutes, label in ((None,'暂无法估算'),(0.5,'不足 1 分钟'),
+                               (1,'1 分钟'),(59.5,'1 小时'),
+                               (61,'1 小时 1 分钟'),(1500,'1 天 1 小时')):
+            self.assertEqual(format_level_eta(minutes),label)
+
+    def test_level_eta_paused_or_zero_gain_is_unavailable(self):
+        for rate in (None,0):
+            view, snapshot = self.make_orb(value=rate)
+            snapshot.update(current_exp=50000,current_percent=25)
+            view.paint_panel()
+            self.assertEqual(self.fitted_values(view)['eta_value'],'暂无法估算')
 
     def test_upgrade_gap_is_a_lower_bound_without_hiding_full_coverage(self):
         view, snapshot = self.make_orb(value=125,state='ready',observed=1800)

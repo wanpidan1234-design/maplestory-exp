@@ -134,6 +134,7 @@ def rate_window_display(snapshot, seconds):
 class Orb:
     def __init__(self, root, backend):
         self.root, self.backend = root, backend
+        backend.review_ui_snapshot = self.review_snapshot
         self.scale = max(1, root.winfo_fpixels('1i')/96)
         self.base_scale = self.scale
         self.sample_cache = []
@@ -509,6 +510,7 @@ class Orb:
         menu.add_command(label='重新定位游戏',command=self.backend.auto_game)
         menu.add_command(label='框选经验栏…',command=self.backend.select)
         menu.add_command(label='识别设置…',command=self.show_settings)
+        menu.add_command(label='花 Buff / 音乐提醒…',command=self.show_settings)
         menu.add_command(label='查看本次评审…',command=self.review_view.show_details)
         menu.add_separator()
         menu.add_command(label='退出',command=self.close)

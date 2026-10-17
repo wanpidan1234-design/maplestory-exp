@@ -6,7 +6,7 @@ import runpy
 import sys
 import tempfile
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 
 
 def configure_data_directory():
@@ -26,6 +26,7 @@ def self_test(report_path):
             import dxcam
             import mss
             import numpy as np
+            import wave
             from PIL import Image, ImageDraw, ImageFont
             from experience_ocr import ExperienceOCR
             from image_assets import read_image
@@ -33,10 +34,19 @@ def self_test(report_path):
             from app import App
             from orb import Orb
             from monster_portraits import name_ids
+            from ui_midnight import percent_rates, level_up_minutes
 
             base = Path(__file__).parent
-            for name in ('exp-anchor.png', 'level-anchor.png', 'monster-level-prefix.png'):
+            for name in ('exp-anchor.png', 'level-anchor.png', 'monster-level-prefix.png',
+                         'holy-symbol-anchor.png'):
                 assert read_image(base / 'assets' / name) is not None, name
+            with wave.open(str(base / 'assets/flower-reminder.wav'), 'rb') as sound:
+                assert sound.getnframes() > 0
+            with Image.open(base / 'assets/maple-exp-icon-v1.ico') as icon:
+                icon.load()
+            assert percent_rates(1000,50000,25) == (0.5,30)
+            assert level_up_minutes(1000,50000,25) == 150
+            report['percentage_and_eta'] = 'ok'
             assert GameCapture().anchor is not None
             with Image.open(base / 'assets/levelup-d-dynamic/orb-000.png') as image:
                 image.load()
@@ -58,6 +68,9 @@ def self_test(report_path):
             companion = Orb(root, backend)
             companion.toggle_panel()
             root.update()
+            assert companion.midnight_panel.canvas.itemcget(companion.midnight_panel.eta_value,'text')
+            assert hasattr(backend,'flower')
+            report['flower_and_eta_ui'] = 'ok'
             companion.show_history()
             root.update()
             companion.show_combat()

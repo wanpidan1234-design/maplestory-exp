@@ -28,6 +28,7 @@ from app_time import format_time
 from combat_service import CombatService
 from recognition_diagnostics import AsyncRecognitionJournal
 from analysis_log import AnalysisJournal
+from flower_service import FlowerService
 from ui_charts import rate_prefix
 from ui_theme import configure_history, configure_window, SURFACE, MIDNIGHT, INK, MUTED, ACCENT, FONT
 
@@ -60,6 +61,7 @@ class App:
         self.history.import_legacy(CONFIG.parent/'sessions')
         self.history.import_snapshot(CONFIG.with_name('live-status.json'))
         self.combat = CombatService(self.history.db)
+        self.flower = FlowerService(CONFIG.with_name('flower-buff.json'))
         self.storage_error = None
         self.region = None
         self.running = False
@@ -111,6 +113,30 @@ class App:
         ttk.Label(settings, text='当前等级升级所需经验（可选）').pack(side='left')
         ttk.Entry(settings, textvariable=self.manual, width=17).pack(side='left', padx=8)
         ttk.Checkbutton(settings, text='窗口置顶', variable=self.topmost, command=lambda: root.attributes('-topmost', self.topmost.get())).pack(side='right')
+        flower_controls = ttk.Frame(outer)
+        flower_controls.pack(fill='x', pady=(0, 10))
+        style.configure('Flower.TSpinbox', fieldbackground=MIDNIGHT['raised'],
+                        foreground=INK, background=MIDNIGHT['raised'], arrowcolor=INK)
+        style.map('Flower.TSpinbox', fieldbackground=[('!disabled', MIDNIGHT['raised'])],
+                  foreground=[('!disabled', INK)])
+        self.flower_enabled = tk.BooleanVar(value=self.flower.enabled)
+        self.flower_music = tk.BooleanVar(value=self.flower.music)
+        self.flower_ahead = tk.StringVar(value=str(self.flower.ahead))
+        self.flower_status = tk.StringVar(value='等待花 Buff')
+        ttk.Checkbutton(flower_controls, text='花 Buff 提醒', variable=self.flower_enabled,
+                        command=self.save_flower_settings).pack(side='left')
+        ttk.Checkbutton(flower_controls, text='音乐', variable=self.flower_music,
+                        command=self.save_flower_settings).pack(side='left', padx=8)
+        ttk.Label(flower_controls, text='提前').pack(side='left')
+        ahead = ttk.Spinbox(flower_controls, from_=5, to=30, width=4,
+                            style='Flower.TSpinbox', textvariable=self.flower_ahead,
+                            command=self.save_flower_settings)
+        ahead.pack(side='left', padx=5)
+        ahead.bind('<FocusOut>', lambda event: self.save_flower_settings())
+        ahead.bind('<Return>', lambda event: self.save_flower_settings())
+        ttk.Label(flower_controls, text='秒').pack(side='left')
+        ttk.Button(flower_controls, text='试听', command=lambda: self.flower.sound.play(test=True)).pack(side='left', padx=10)
+        ttk.Label(outer, textvariable=self.flower_status, style='Sub.TLabel', wraplength=700).pack(anchor='w', pady=(0, 10))
         self.preview = tk.Label(outer, text='框选后的画面预览', bg=MIDNIGHT['raised'], fg=MUTED, height=5)
         self.preview.pack(fill='x', pady=(0, 12))
         ttk.Label(outer, textvariable=self.raw, wraplength=700, style='Sub.TLabel').pack(anchor='w')
@@ -306,9 +332,19 @@ class App:
         CONFIG.parent.mkdir(parents=True, exist_ok=True)
         CONFIG.write_text(json.dumps({'region': self.region, 'cap': self.manual.get()}), encoding='utf-8')
 
+    def save_flower_settings(self):
+        try:
+            self.flower.configure(self.flower_enabled.get(), self.flower_music.get(), self.flower_ahead.get())
+        except (ValueError, OSError) as error:
+            self.flower_ahead.set(str(self.flower.ahead))
+            messagebox.showerror('花 Buff 提醒', str(error), parent=self.root)
+
     def close(self):
         self.log_event('app_closing', before=self.diagnostic_state())
         try:
+            flower = getattr(self, 'flower', None)
+            if flower is not None:
+                flower.close()
             self.combat.close()
             # Export before pause clears the observation windows. The stored
             # timer is frozen; process downtime is excluded on restoration.
@@ -662,6 +698,7 @@ class App:
                        cache_reason='live' if self.fresh_reading() else 'no_confirmed_cache',
                        display_observation_id=saved['snapshot'].get('display_observation_id') if saved else None,
                        current_exp=self.tracker.previous if self.fresh_reading() else None,
+                       current_cap=self.tracker.cap if self.fresh_reading() else None,
                        current_percent=self.latest.percent if self.fresh_reading() and self.latest else None)
         if self.fresh_reading():
             return current
@@ -721,6 +758,7 @@ class App:
                 self.log_event('history_slow',sample_id=sample_id,duration_ms=(time.monotonic()-started)*1000,context=True)
             if self.fresh_reading():
                 rate.update(current_exp=self.tracker.previous,
+                            current_cap=self.tracker.cap,
                             current_percent=self.latest.percent if self.latest else None,
                             display_observation_id=sample_id)
                 self._confirmed_rate_display = dict(generation=self.generation,
@@ -821,6 +859,11 @@ class App:
             self._diagnostic_tick_due = time.monotonic()+.25
 
     def _tick(self):
+        flower = getattr(self, 'flower', None)
+        if flower is not None:
+            flower.poll(self.running)
+            snap = flower.snapshot()
+            self.flower_status.set(snap['text'] + (' · '+snap['audio_error'] if snap['audio_error'] else ''))
         try:
             while True:
                 generation, frame, raw, reading, error,info = self.events.get_nowait()
@@ -1040,6 +1083,9 @@ class App:
             data['kills'] = self.combat.kill_summary()
             data['ui_animation'] = getattr(self,'ui_animation_state',{})
             data['diagnostics'] = self.diagnostic_health()
+            flower = getattr(self, 'flower', None)
+            if flower is not None:
+                data['flower_buff'] = flower.snapshot()
             launch = getattr(self, 'review_launch', {})
             review_thread = getattr(self, 'startup_review_thread', None)
             data.update(app_instance_id=launch.get('instance_id'),

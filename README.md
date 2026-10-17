@@ -6,12 +6,14 @@ Windows 冒险岛经验统计悬浮工具。通过屏幕截图和 OCR 读取经�
 
 A Windows **MapleStory EXP / XP tracker** with an **OCR game overlay** for experience monitoring, EXP per minute, EXP per hour, leveling efficiency, level-up progress and local session history. Includes a floating desktop widget and a standalone Windows release; reads visible screen pixels only.
 
-**直接使用：** [下载 Windows x64 独立版 1.0.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.0.0/MapleExpTracker-1.0.0-windows-x64.zip)（约 333 MB，无需安装 Python） · [版本说明](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.0.0)
+**直接使用：** [下载 Windows x64 独立版 1.1.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.1.0/MapleExpTracker-1.1.0-windows-x64.zip)（无需安装 Python） · [版本说明](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.1.0)
 
 ## 功能
 
-- 可拖动、可调透明度的悬浮球与夜航统计面板。
+- 可拖动、可调透明度的悬浮球与窄版夜航统计面板。
 - 累计经验、有效计时，以及 1 / 2 / 5 / 10 / 30 分钟分均窗口。
+- 每分钟／每小时经验百分比，以及按当前 1 分钟分均折算的预计升级剩余时间。百分比优先采用已知升级经验上限，否则由同次已确认的当前经验与进度折算；读数缺失或没有经验增长时不提供升级时间，保留旧读数时标明“上次估算”。
+- [花 Buff 观察与音乐提醒](docs/flower-buff.md)：识别神圣祈祷图标和剩余时间，默认提前 15 秒响铃，每轮一次；识别过的 Buff 被喇叭遮挡时保留图标、阴影和预计倒计时，重新读到秒数后校准。可在识别设置中关闭提醒或调整提前量。
 - 升级识别与动画；无法确认的经验下降会暂停核对。
 - SQLite 本地历史、日期查询、分钟经验与全天曲线，日期统一按北京时间（UTC+8）。
 - 正常退出后接续累计值和已确认的窗口样本；重新进入游戏时先建立基线，离线收益与离线时间不计入。
@@ -23,7 +25,7 @@ A Windows **MapleStory EXP / XP tracker** with an **OCR game overlay** for exper
 
 适用于 **Windows 10/11 x64**。已内置 Python、OCR 模型及界面动画，启动不需要下载依赖，也不需要安装 Codex。
 
-1. 下载上方独立版 ZIP，或打开 [Release 1.0.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.0.0)，在 **Assets** 中选择 `MapleExpTracker-1.0.0-windows-x64.zip`。GitHub 自动提供的 `Source code` 是源码包，不含可直接启动的程序。
+1. 下载上方独立版 ZIP，或打开 [Release 1.1.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.1.0)，在 **Assets** 中选择 `MapleExpTracker-1.1.0-windows-x64.zip`。GitHub 自动提供的 `Source code` 是源码包，不含可直接启动的程序。
 2. 右键压缩包，选择“全部解压”，放到自己方便找到的文件夹。支持中文和空格路径，请勿直接在压缩包内运行。
 3. 打开解压后的 `MapleExpTracker` 文件夹，双击 `MapleExpTracker.exe`。保留旁边的 `_internal` 文件夹，不能只复制 EXE。
 4. 进入游戏并让经验栏保持可见。程序会尝试自动定位游戏；点击悬浮球可展开统计面板，拖动悬浮球可调整位置。
@@ -51,6 +53,7 @@ MapleExpTracker/
 | 自动定位失败 | 确认游戏窗口可见，选择“重新定位游戏” |
 | 手动选择识别区域 | “框选经验栏…”；选取完整经验数字区域，避免混入聊天和其他文字 |
 | 调整识别参数 | “识别设置…” |
+| 调整花 Buff 提醒 | “识别设置…”中的花 Buff 提醒、声音和提前秒数 |
 | 查看已保存记录 | “历史回看 / 每日总计” |
 | 对比各时间窗口 | “多尺度分均” |
 | 查看战斗统计 | “战斗伤害 / 血蓝消耗”（实验性功能） |
@@ -70,14 +73,14 @@ MapleExpTracker/
 
 可将 `%LOCALAPPDATA%\MapleExpTracker` 粘贴到资源管理器地址栏打开。升级前先从悬浮球菜单正常退出，备份该目录，再将新版解压到新文件夹启动；保留用户数据目录即可保留历史。若设置过 `MAPLE_EXP_DATA_DIR`，历史会写入指定目录，备份时也要包含它。源码版默认使用项目内 `data/history.sqlite3`，切换到独立版时不会自动搬迁该数据库。
 
-校验下载时，另行下载 Release 附件 [SHA256SUMS.txt](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.0.0/SHA256SUMS.txt)，与 ZIP 放在同一个文件夹。打开该文件夹中的 PowerShell，运行：
+校验下载时，另行下载 Release 附件 [SHA256SUMS.txt](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.1.0/SHA256SUMS.txt)，与 ZIP 放在同一个文件夹。打开该文件夹中的 PowerShell，运行：
 
 ```powershell
-Get-FileHash .\MapleExpTracker-1.0.0-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\MapleExpTracker-1.1.0-windows-x64.zip -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
-两处的 SHA-256 应完全相同（字母大小写可忽略）。当前 1.0.0 未做代码签名；若 Windows 提示无法验证发布者，可先核对本仓库的下载来源和校验值。
+两处的 SHA-256 应完全相同（字母大小写可忽略）。当前 1.1.0 未做代码签名；若 Windows 提示无法验证发布者，可先核对本仓库的下载来源和校验值。
 
 ### 常见问题
 

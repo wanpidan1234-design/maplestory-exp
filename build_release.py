@@ -34,14 +34,15 @@ def build(output):
         with zipfile.ZipFile(archive) as bundle:
             bundle.extractall(source)
         version_file = workspace / 'version.txt'
-        version_file.write_text("""VSVersionInfo(
-  ffi=FixedFileInfo(filevers=(1,0,0,0), prodvers=(1,0,0,0), mask=0x3f,
+        version_info = (*map(int, VERSION.split('.')), 0)
+        version_file.write_text(f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={version_info!r}, prodvers={version_info!r}, mask=0x3f,
                    flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0,0)),
   kids=[StringFileInfo([StringTable('040904B0', [
     StringStruct('FileDescription', 'MapleStory EXP Tracker'),
-    StringStruct('FileVersion', '1.0.0'),
+    StringStruct('FileVersion', '{VERSION}'),
     StringStruct('ProductName', 'MapleStory EXP Tracker'),
-    StringStruct('ProductVersion', '1.0.0'),
+    StringStruct('ProductVersion', '{VERSION}'),
     StringStruct('OriginalFilename', 'MapleExpTracker.exe')])]),
     VarFileInfo([VarStruct('Translation', [1033,1200])])])
 """, encoding='utf-8')
@@ -60,6 +61,7 @@ def build(output):
                    '--collect-data', 'rapidocr_onnxruntime',
                    '--collect-binaries', 'onnxruntime', '--collect-submodules', 'dxcam',
                    '--add-data', f'{source / "assets"}:assets',
+                   '--icon', str(source / 'assets/maple-exp-icon-v1.ico'),
                    '--version-file', str(version_file), str(source / 'release_entry.py')]
         subprocess.run(command, cwd=source, check=True)
         app = workspace / 'bundle' / 'MapleExpTracker'
@@ -74,6 +76,8 @@ def build(output):
         if smoke.returncode or result.get('status') != 'passed' or not result.get('frozen'):
             raise RuntimeError(f'Frozen runtime self-test failed: {result}')
         shutil.copyfile(source / 'README.md', app / 'README.md')
+        shutil.copyfile(source / 'assets/maple-exp-icon-v1.ico', app / 'maple-exp-icon-v1.ico')
+        shutil.copyfile(smoke_report, output / 'self-test.json')
         licenses = app / 'THIRD_PARTY_LICENSES'
         licenses.mkdir()
         packages = {}
