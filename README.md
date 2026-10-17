@@ -10,6 +10,8 @@ A Windows **MapleStory EXP / XP tracker** with an **OCR game overlay** for exper
 
 ## 功能
 
+- 独立[三转答题助手 1.0.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/quiz-v1.0.0)：39道社区参考题、屏幕 OCR 与手动查题；[使用说明](docs/third-job-quiz.md)。近似匹配仅作参考，请人工核对原题和选项。
+
 - 可拖动、可调透明度的悬浮球与窄版夜航统计面板。
 - 累计经验、有效计时，以及 1 / 2 / 5 / 10 / 30 分钟分均窗口。
 - 每分钟／每小时经验百分比，以及按当前 1 分钟分均折算的预计升级剩余时间。百分比优先采用已知升级经验上限，否则由同次已确认的当前经验与进度折算；读数缺失或没有经验增长时不提供升级时间，保留旧读数时标明“上次估算”。

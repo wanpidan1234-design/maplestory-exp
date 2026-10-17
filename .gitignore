@@ -6,6 +6,8 @@
 !/requirements.txt
 !/requirements-build.txt
 !/start.cmd
+!/start-quiz.cmd
+!/tests/
 !/*.py
 !/assets/
 !/docs/
@@ -13,6 +15,7 @@
 !/assets/damage-digits.json
 !/assets/hud-digits.json
 !/assets/monster-catalog.json
+!/assets/third-job-quiz-cn.json
 !/assets/exp-anchor.png
 !/assets/level-anchor.png
 !/assets/holy-symbol-anchor.png
