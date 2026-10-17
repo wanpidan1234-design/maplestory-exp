@@ -100,17 +100,17 @@ def build(output, product='tracker'):
         licenses.mkdir()
         packages = {}
         for distribution in importlib.metadata.distributions():
-            name = distribution.metadata['Name']
-            if name.lower() in {'pip', 'setuptools', 'pyinstaller', 'pyinstaller-hooks-contrib', 'pefile', 'altgraph', 'pywin32-ctypes'}:
+            distribution_name = distribution.metadata['Name']
+            if distribution_name.lower() in {'pip', 'setuptools', 'pyinstaller', 'pyinstaller-hooks-contrib', 'pefile', 'altgraph', 'pywin32-ctypes'}:
                 continue
-            packages[name] = distribution.version
+            packages[distribution_name] = distribution.version
             for item in distribution.files or []:
                 is_notice = item.name.lower().startswith(('license', 'copying', 'notice'))
                 in_metadata = any(part.endswith('.dist-info') for part in item.parts)
                 if (is_notice or (in_metadata and 'licenses' in item.parts)) and item.suffix.lower() not in {'.py', '.pyc', '.pyo'}:
                     original = Path(distribution.locate_file(item))
                     if original.is_file():
-                        target = licenses / name / str(item).replace('/', '__').replace('\\', '__')
+                        target = licenses / distribution_name / str(item).replace('/', '__').replace('\\', '__')
                         target.parent.mkdir(exist_ok=True)
                         shutil.copyfile(original, target)
         python_license = Path(sys.base_prefix) / 'LICENSE.txt'
