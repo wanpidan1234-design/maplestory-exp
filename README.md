@@ -8,6 +8,10 @@ A Windows **MapleStory EXP / XP tracker** with an **OCR game overlay** for exper
 
 **直接使用：** [下载 Windows x64 独立版 1.1.0](https://github.com/wanpidan1234-design/maplestory-exp/releases/download/v1.1.0/MapleExpTracker-1.1.0-windows-x64.zip)（无需安装 Python） · [版本说明](https://github.com/wanpidan1234-design/maplestory-exp/releases/tag/v1.1.0)
 
+## 网页版
+
+[打开网页版](https://wanpidan1234-design.github.io/maplestory-exp/) · [启动与功能说明](docs/web-companion.md)。运行 `start-web.cmd` 启动配套本机服务；首次启动需安装 Python 3.10+。本机负责截图、识别和存储，网页负责显示与操作。
+
 ## 功能
 
 - 可拖动、可调透明度的悬浮球与窄版夜航统计面板。

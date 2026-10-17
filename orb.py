@@ -1,6 +1,7 @@
 """Transparent, draggable desktop companion for the screen-only EXP engine."""
 import ctypes
 import json
+import os
 import time
 import sys
 import tkinter as tk
@@ -663,6 +664,19 @@ if __name__=='__main__':
     root.withdraw()
     backend = App(root)
     orb = Orb(root,backend)
+    if '--web' in sys.argv:
+        from web_bridge import Bridge
+        import webbrowser
+        try:
+            backend.web_bridge = Bridge(backend, orb)
+            # Private, transient launch receipt. Never part of a release/site.
+            CONFIG.with_name('web-connection.json').write_text(json.dumps(dict(
+                url=backend.web_bridge.url(), hosted_url=backend.web_bridge.url(True),
+                pid=os.getpid(), port=backend.web_bridge.port)), encoding='utf-8')
+            if '--no-browser' not in sys.argv:
+                root.after(600, lambda: webbrowser.open(backend.web_bridge.url('--hosted' in sys.argv)))
+        except OSError as error:
+            backend.status.set('网页服务启动失败：'+str(error))
     if '--paused' in sys.argv:
         backend.status.set('已暂停；点击继续统计开始记录。')
     else:
@@ -673,6 +687,11 @@ if __name__=='__main__':
         root.after(1400,orb.show_history)
     if '--combat' in sys.argv:
         root.after(1500,orb.show_combat)
+    if '--restore-ui' in sys.argv:
+        from web_restore_ui import restore_ui
+        restore_file = Path(sys.argv[sys.argv.index('--restore-ui')+1])
+        saved_ui = json.loads(restore_file.read_text(encoding='utf-8'))
+        root.after(1800, lambda: restore_ui(orb, saved_ui))
     # A public clone has no personal policy or authorization for auto-development.
     if '--no-startup-review' not in sys.argv and Path(__file__).with_name('STARTUP_REVIEW.md').is_file():
         install_startup_review(root, backend, orb, user_requested='--review-once' in sys.argv)

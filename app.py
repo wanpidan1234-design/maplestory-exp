@@ -340,6 +340,9 @@ class App:
             messagebox.showerror('花 Buff 提醒', str(error), parent=self.root)
 
     def close(self):
+        web_bridge = getattr(self, 'web_bridge', None)
+        if web_bridge is not None:
+            web_bridge.close()
         self.log_event('app_closing', before=self.diagnostic_state())
         try:
             flower = getattr(self, 'flower', None)
@@ -452,8 +455,8 @@ class App:
         self.log_event('recording_started',reason='resume_pending' if restoring else 'new_baseline',
             before=before,after=self.diagnostic_state())
 
-    def reset(self):
-        if self.records and not messagebox.askyesno('新建记录', '结束本次统计并开始新记录？已有记录会保留在历史中。'):
+    def reset(self, *, confirmed=False):
+        if self.records and not confirmed and not messagebox.askyesno('新建记录', '结束本次统计并开始新记录？已有记录会保留在历史中。'):
             return
         self.pause(reason='new_record')
         self.combat.reset()
@@ -1046,59 +1049,65 @@ class App:
             self._diagnostic_wait_key = key
         self.root.after(250, self.tick)
 
+    def status_payload(self):
+        """Snapshot on the owner thread; web consumers never touch Tk/SQLite."""
+        data = dict(updated=time.time(),valid=self.fresh_reading(),running=self.running,last_valid=self.last_valid_time,current=self.tracker.previous,percent=self.latest.percent if self.latest else None,total=self.tracker.total,elapsed=self.tracker.elapsed,per_minute=self.tracker.rates()[0],per_hour=self.tracker.rates()[1],samples=len(self.records),capture=self.capture_info,status=self.status.get())
+        rate = self.rate_snapshot()
+        primary = rate['primary']
+        display = self.display_rate_snapshot()
+        # Legacy realtime_* fields retain their saved EWMA meaning. New
+        # consumers can use explicit primary_* and trend_* contracts.
+        data.update(realtime_per_minute=rate['value'],rate_window_seconds=None,
+                    rate_algorithm=rate['algorithm'],rate_state=rate['state'],
+                    rate_half_life_seconds=rate['half_life_seconds'],
+                    rate_observed_seconds=rate['observed_seconds'],rate_segment=rate['segment'],
+                    rolling60_per_minute=rate['rolling60'],
+                    window_algorithm=rate['window_algorithm'],window_rates=rate['windows'],
+                    history_path=str(self.history.path),history_error=self.storage_error)
+        data.update(primary_per_minute=primary['value'],
+                    primary_per_hour=primary['value']*60 if primary['value'] is not None else None,
+                    primary_algorithm=primary['algorithm'],primary_window_seconds=primary['window_seconds'],
+                    primary_state=primary['state'],primary_observed_seconds=primary['observed_seconds'],
+                    primary_segment=primary['segment'],
+                    primary_has_gaps=primary.get('has_gaps',False),
+                    trend_per_minute=rate['value'],trend_algorithm=rate['algorithm'],
+                    trend_half_life_seconds=rate['half_life_seconds'],trend_state=rate['state'],
+                    trend_has_gaps=rate.get('has_gaps',False))
+        data.update(display_state=display['display_state'],
+                    display_age_seconds=display['display_age_seconds'],
+                    display_current_exp=display.get('current_exp'),
+                    display_current_percent=display.get('current_percent'),
+                    display_primary_per_minute=display['primary']['value'],
+                    display_window_rates=display['windows'],display_trend_per_minute=display['value'])
+        data.update(level=self.tracker.level,confirmed_levels=self.tracker.confirmed_levels,level_gaps=self.tracker.level_gaps,last_level_event=self.auto_level.last_event)
+        data['realtime_per_hour'] = rate['value'] * 60 if rate['value'] is not None else None
+        data['combat'] = self.combat.summary()
+        data['kills'] = self.combat.kill_summary()
+        data['ui_animation'] = getattr(self,'ui_animation_state',{})
+        data['diagnostics'] = self.diagnostic_health()
+        flower = getattr(self, 'flower', None)
+        if flower is not None:
+            data['flower_buff'] = flower.snapshot()
+        launch = getattr(self, 'review_launch', {})
+        review_thread = getattr(self, 'startup_review_thread', None)
+        data.update(app_instance_id=launch.get('instance_id'),
+                    app_started_at=launch.get('created_at'), app_pid=launch.get('pid'),
+                    startup_review_queued=bool(getattr(review_thread, 'review_persisted', False)),
+                    startup_review_error=(getattr(self, 'startup_review_error', None)
+                                          or getattr(review_thread, 'review_error', None)))
+        ui_snapshot = getattr(self, 'review_ui_snapshot', None)
+        if callable(ui_snapshot):
+            try:
+                data['ui_windows'] = ui_snapshot()
+            except Exception as error:
+                data['ui_snapshot_error'] = type(error).__name__
+        data['session_id'] = self.history.active
+        return data
+
     def write_status(self):
         try:
             CONFIG.parent.mkdir(parents=True,exist_ok=True)
-            data = dict(updated=time.time(),valid=self.fresh_reading(),running=self.running,last_valid=self.last_valid_time,current=self.tracker.previous,percent=self.latest.percent if self.latest else None,total=self.tracker.total,elapsed=self.tracker.elapsed,per_minute=self.tracker.rates()[0],per_hour=self.tracker.rates()[1],samples=len(self.records),capture=self.capture_info,status=self.status.get())
-            rate = self.rate_snapshot()
-            primary = rate['primary']
-            display = self.display_rate_snapshot()
-            # Legacy realtime_* fields retain their saved EWMA meaning. New
-            # consumers can use explicit primary_* and trend_* contracts.
-            data.update(realtime_per_minute=rate['value'],rate_window_seconds=None,
-                        rate_algorithm=rate['algorithm'],rate_state=rate['state'],
-                        rate_half_life_seconds=rate['half_life_seconds'],
-                        rate_observed_seconds=rate['observed_seconds'],rate_segment=rate['segment'],
-                        rolling60_per_minute=rate['rolling60'],
-                        window_algorithm=rate['window_algorithm'],window_rates=rate['windows'],
-                        history_path=str(self.history.path),history_error=self.storage_error)
-            data.update(primary_per_minute=primary['value'],
-                        primary_per_hour=primary['value']*60 if primary['value'] is not None else None,
-                        primary_algorithm=primary['algorithm'],primary_window_seconds=primary['window_seconds'],
-                        primary_state=primary['state'],primary_observed_seconds=primary['observed_seconds'],
-                        primary_segment=primary['segment'],
-                        primary_has_gaps=primary.get('has_gaps',False),
-                        trend_per_minute=rate['value'],trend_algorithm=rate['algorithm'],
-                        trend_half_life_seconds=rate['half_life_seconds'],trend_state=rate['state'],
-                        trend_has_gaps=rate.get('has_gaps',False))
-            data.update(display_state=display['display_state'],
-                        display_age_seconds=display['display_age_seconds'],
-                        display_current_exp=display.get('current_exp'),
-                        display_current_percent=display.get('current_percent'),
-                        display_primary_per_minute=display['primary']['value'],
-                        display_window_rates=display['windows'],display_trend_per_minute=display['value'])
-            data.update(level=self.tracker.level,confirmed_levels=self.tracker.confirmed_levels,level_gaps=self.tracker.level_gaps,last_level_event=self.auto_level.last_event)
-            data['realtime_per_hour'] = rate['value'] * 60 if rate['value'] is not None else None
-            data['combat'] = self.combat.summary()
-            data['kills'] = self.combat.kill_summary()
-            data['ui_animation'] = getattr(self,'ui_animation_state',{})
-            data['diagnostics'] = self.diagnostic_health()
-            flower = getattr(self, 'flower', None)
-            if flower is not None:
-                data['flower_buff'] = flower.snapshot()
-            launch = getattr(self, 'review_launch', {})
-            review_thread = getattr(self, 'startup_review_thread', None)
-            data.update(app_instance_id=launch.get('instance_id'),
-                        app_started_at=launch.get('created_at'), app_pid=launch.get('pid'),
-                        startup_review_queued=bool(getattr(review_thread, 'review_persisted', False)),
-                        startup_review_error=(getattr(self, 'startup_review_error', None)
-                                              or getattr(review_thread, 'review_error', None)))
-            ui_snapshot = getattr(self, 'review_ui_snapshot', None)
-            if callable(ui_snapshot):
-                try:
-                    data['ui_windows'] = ui_snapshot()
-                except Exception as error:
-                    data['ui_snapshot_error'] = type(error).__name__
+            data = self.status_payload()
             temporary = CONFIG.with_name('live-status.tmp')
             temporary.write_text(json.dumps(data,ensure_ascii=False),encoding='utf-8')
             temporary.replace(CONFIG.with_name('live-status.json'))

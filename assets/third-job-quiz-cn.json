@@ -1,0 +1,322 @@
+{
+  "schema_version": 1,
+  "region": "冒险岛国服怀旧服",
+  "retrieved_on": "2026-10-15",
+  "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+  "source_type": "community_reference",
+  "note": "社区参考题库，未经本工具逐题实机验证；按答案文字核对，不使用网站选项序号。",
+  "entries": [
+    {
+      "id": "cn-third-001",
+      "question": "在魔法密林见不到的 NPC 是谁？",
+      "answer": "露尔",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-002",
+      "question": "在神秘岛（天空之城）没有出现的怪物是哪一个？",
+      "answer": "黑鳄鱼",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-003",
+      "question": "下面中等级最高的怪物是什么？",
+      "answer": "斧木妖",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-004",
+      "question": "下面中药水和药水的效果连接不恰当的是什么？",
+      "answer": "清晨之露—魔量3000恢复",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-005",
+      "question": "跟宠物没有关系的 NPC 是谁？",
+      "answer": "比休斯",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-006",
+      "question": "在射手村看不到的 NPC 是谁？",
+      "answer": "特奥",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-007",
+      "question": "下面中在彩虹岛看不见的怪物是什么？",
+      "answer": "漂漂猪",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-008",
+      "question": "射手村的玛雅为了治好病让你给她的物品是？",
+      "answer": "奇怪的药",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-009",
+      "question": "金银岛没有的村落？",
+      "answer": "彩虹村",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-010",
+      "question": "在金银岛和蚂蚁洞看不到的怪物是哪一个？",
+      "answer": "石球",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-011",
+      "question": "不是阿尔法队员的是谁？",
+      "answer": "比特中士",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-012",
+      "question": "唤醒麦吉不需要的材料是哪一个？",
+      "answer": "妖精之翼",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-013",
+      "question": "在金银岛的废弃都市不能见到的 NPC 是谁？",
+      "answer": "鲁克",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-014",
+      "question": "怪物和爆出物品不正确关系的是哪一个？",
+      "answer": "食人花—食人花的叶子",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-015",
+      "question": "下面中能飞行的怪物是什么？",
+      "answer": "巫婆",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-016",
+      "question": "下面中怪物的技能和技能的说明不恰当的是什么？",
+      "answer": "虚弱—移动速度减少",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-017",
+      "question": "在天空之城不能看到的 NPC 是哪一个？",
+      "answer": "索非亚",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-018",
+      "question": "要求级别最高的任务是哪一个？",
+      "answer": "阿尔卡斯特和黑暗水晶",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-019",
+      "question": "在金银岛的明珠港不能看到的 NPC 是谁？",
+      "answer": "赛恩",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-020",
+      "question": "药和功效正确连线的是哪一个？",
+      "answer": "披萨—HP400 恢复",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-021",
+      "question": "冒险岛最初遇见的 NPC 是谁？",
+      "answer": "希娜",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-022",
+      "question": "从 1 级升到 2 级所需经验是多少？",
+      "answer": "15",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-023",
+      "question": "在神秘岛冰峰雪域看不见的 NPC 是谁？",
+      "answer": "保姆",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-024",
+      "question": "下面哪个职业不是二转中出现的职业？",
+      "answer": "斗士",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-025",
+      "question": "能够反复执行的任务是哪一个？",
+      "answer": "艾温的玻璃鞋",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-026",
+      "question": "怪物与所掉落战利品是正确对应的一组？",
+      "answer": "蝙蝠—蝙蝠翅膀",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-027",
+      "question": "在金银岛的勇士部落不能看到的 NPC 是谁？",
+      "answer": "易德",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-028",
+      "question": "离家出走的少年阿列克斯的父亲是谁？",
+      "answer": "斯坦长老",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-029",
+      "question": "二转收集 30 个黑珠后教官给你的物品是？",
+      "answer": "英雄证书",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-030",
+      "question": "一转必须条件被正确叙述的是哪一个？",
+      "answer": "弓箭手 25 敏捷",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-031",
+      "question": "明珠港没有哪个怪物？",
+      "answer": "小石球",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-032",
+      "question": "哪组药水可以回复 HP50% MP50%？",
+      "answer": "特殊药水",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-033",
+      "question": "《上古魔书》任务完成后找谁换奖励？",
+      "answer": "阿尔卡斯特",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-034",
+      "question": "勇士部落武术教练戴的帽子上的羽毛有几根？",
+      "answer": "13根",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-035",
+      "question": "魔法密林的汉斯拿着的球是什么颜色的？",
+      "answer": "蓝色",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-036",
+      "question": "射手村的赫丽娜的眼睛是什么颜色？",
+      "answer": "绿色",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": true
+    },
+    {
+      "id": "cn-third-037",
+      "question": "废都的达克鲁所在的地图名字是什么？",
+      "answer": "废都酒吧",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-038",
+      "question": "诺特勒斯号的凯琳所在的航海室里盯着屏幕的这些人名字是什么？",
+      "answer": "金博士",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    },
+    {
+      "id": "cn-third-039",
+      "question": "下面中跟合成或冶炼工作没有关系的人是谁？",
+      "answer": "赛恩",
+      "aliases": [],
+      "source": "https://mxdc.dvg.cn/tools/third-job-quiz/",
+      "requires_answer_visible": false
+    }
+  ]
+}
